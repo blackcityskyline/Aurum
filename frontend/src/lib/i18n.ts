@@ -18,6 +18,7 @@ const ru = {
   "nav.recurring": "Регулярные",
   "nav.goals": "Цели",
   "nav.advice": "Советы",
+  "nav.chat": "Чат",
   "nav.settings": "Настройки",
   "nav.comingSoon": "скоро",
 
@@ -500,6 +501,15 @@ const ru = {
   "months.oct": "Окт",
   "months.nov": "Ноя",
   "months.dec": "Дек",
+
+  "chat.newChat": "Новый чат",
+  "chat.title": "Чат с ассистентом",
+  "chat.untitled": "Без названия",
+  "chat.empty": "Начните диалог с ассистентом",
+  "chat.noSessions": "Нет сессий",
+  "chat.placeholder": "Введите сообщение…",
+  "chat.send": "Отправить",
+  "chat.sending": "Отправка…",
 };
 
 const en: Record<keyof typeof ru, string> = {
@@ -516,6 +526,7 @@ const en: Record<keyof typeof ru, string> = {
   "nav.recurring": "Recurring",
   "nav.goals": "Goals",
   "nav.advice": "Advice",
+  "nav.chat": "Chat",
   "nav.settings": "Settings",
   "nav.comingSoon": "soon",
 
@@ -994,6 +1005,15 @@ const en: Record<keyof typeof ru, string> = {
   "months.oct": "Oct",
   "months.nov": "Nov",
   "months.dec": "Dec",
+
+  "chat.newChat": "New chat",
+  "chat.title": "Chat with assistant",
+  "chat.untitled": "Untitled",
+  "chat.empty": "Start a conversation with the assistant",
+  "chat.noSessions": "No sessions",
+  "chat.placeholder": "Type a message…",
+  "chat.send": "Send",
+  "chat.sending": "Sending…",
 };
 
 const translations: Record<Language, Record<keyof typeof ru, string>> = { ru, en };
