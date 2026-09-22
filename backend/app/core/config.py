@@ -35,18 +35,10 @@ class Settings(BaseSettings):
     # rather than silently hitting CoinGecko's much stingier keyless tier.
     coingecko_api_key: str = ""
 
-    # Chat / AI agent
-    llm_provider: str = "stub"                    # stub | opencode-zen | groq
-    llm_api_key: str = ""
-    llm_model: str = ""                           # empty = default free model
-    llm_base_url: str = ""
-    llm_max_tokens: int = 2048
-    llm_temperature: float = 0.7
-    chat_max_context_tokens: int = 8000
-
-    # Free models on OpenCode Zen: big-pickle, mimo-v2.6-flash-free,
-    # mimo-v2.5-free, ling-3.0-flash-fin-free, nemotron-3-ultra-free,
-    # nemotron-3.5-lightning-free
+    # Chat / AI agent — talks to a headless opencode serve instance
+    # Provider: "stub" (echo, no LLM) | "opencode" (via opencode serve)
+    llm_provider: str = "opencode"
+    opencode_url: str = "http://127.0.0.1:4096"
 
     @property
     def database_url(self) -> str:
