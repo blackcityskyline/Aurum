@@ -15,11 +15,21 @@ def get_provider(settings: Settings) -> AbstractLLMProvider:
         "stub": StubProvider,
     }
 
-    provider_cls = providers.get(settings.llm_provider)
+    # Lazy import — only load provider if configured (avoids missing deps)
+    provider_name = settings.llm_provider
+    if provider_name not in providers:
+        if provider_name == "opencode-zen":
+            from app.api.llm.opencode_zen import OpenCodeZenProvider
+            providers["opencode-zen"] = OpenCodeZenProvider
+        elif provider_name == "groq":
+            from app.api.llm.groq import GroqProvider
+            providers["groq"] = GroqProvider
+
+    provider_cls = providers.get(provider_name)
     if provider_cls is None:
         available = ", ".join(sorted(providers.keys()))
         raise ValueError(
-            f"Unknown LLM provider '{settings.llm_provider}'. "
+            f"Unknown LLM provider '{provider_name}'. "
             f"Available: {available}"
         )
     return provider_cls()

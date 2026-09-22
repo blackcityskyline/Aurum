@@ -36,13 +36,17 @@ class Settings(BaseSettings):
     coingecko_api_key: str = ""
 
     # Chat / AI agent
-    llm_provider: str = "stub"
+    llm_provider: str = "stub"                    # stub | opencode-zen | groq
     llm_api_key: str = ""
-    llm_model: str = ""
+    llm_model: str = ""                           # empty = default free model
     llm_base_url: str = ""
     llm_max_tokens: int = 2048
     llm_temperature: float = 0.7
     chat_max_context_tokens: int = 8000
+
+    # Free models on OpenCode Zen: big-pickle, mimo-v2.6-flash-free,
+    # mimo-v2.5-free, ling-3.0-flash-fin-free, nemotron-3-ultra-free,
+    # nemotron-3.5-lightning-free
 
     @property
     def database_url(self) -> str:
