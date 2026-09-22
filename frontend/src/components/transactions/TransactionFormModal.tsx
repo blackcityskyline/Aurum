@@ -41,8 +41,9 @@ interface SplitRowState {
   note: string;
 }
 
+let _splitId = 0;
 function emptySplitRow(): SplitRowState {
-  return { key: crypto.randomUUID(), category_id: "", amount: "", note: "" };
+  return { key: `split-${++_splitId}-${Date.now()}`, category_id: "", amount: "", note: "" };
 }
 
 // Cents, not floats — a plain Number sum of "0.10" + "0.20" style amounts can
