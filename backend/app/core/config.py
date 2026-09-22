@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     # rather than silently hitting CoinGecko's much stingier keyless tier.
     coingecko_api_key: str = ""
 
+    # Chat / AI agent
+    llm_provider: str = "stub"
+    llm_api_key: str = ""
+    llm_model: str = ""
+    llm_base_url: str = ""
+    llm_max_tokens: int = 2048
+    llm_temperature: float = 0.7
+    chat_max_context_tokens: int = 8000
+
     @property
     def database_url(self) -> str:
         return (

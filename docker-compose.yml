@@ -28,6 +28,14 @@ services:
       # Free CoinGecko Demo key (coingecko.com/en/api/pricing) — the Crypto
       # tab's price sync 400s with a clear message until this is set.
       AURUM_COINGECKO_API_KEY: ${AURUM_COINGECKO_API_KEY:-}
+      # Chat / AI agent
+      AURUM_LLM_PROVIDER: ${AURUM_LLM_PROVIDER:-stub}
+      AURUM_LLM_API_KEY: ${AURUM_LLM_API_KEY:-}
+      AURUM_LLM_MODEL: ${AURUM_LLM_MODEL:-}
+      AURUM_LLM_BASE_URL: ${AURUM_LLM_BASE_URL:-}
+      AURUM_LLM_MAX_TOKENS: ${AURUM_LLM_MAX_TOKENS:-2048}
+      AURUM_LLM_TEMPERATURE: ${AURUM_LLM_TEMPERATURE:-0.7}
+      AURUM_CHAT_MAX_CONTEXT_TOKENS: ${AURUM_CHAT_MAX_CONTEXT_TOKENS:-8000}
     depends_on:
       db:
         condition: service_healthy
