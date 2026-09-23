@@ -5,6 +5,7 @@ from app.models.category import Category
 from app.models.chat import ChatMessage, ChatSession
 from app.models.crypto import CryptoHolding, CryptoPortfolio, CryptoSyncState, CryptoTransaction
 from app.models.goal import Goal, GoalContribution
+from app.models.llm import LlmProvider, LlmSettings
 from app.models.recurring import RecurringTransaction
 from app.models.settings import AppSettings
 from app.models.tag import Tag
@@ -25,6 +26,8 @@ __all__ = [
     "CryptoTransaction",
     "Goal",
     "GoalContribution",
+    "LlmProvider",
+    "LlmSettings",
     "RecurringTransaction",
     "Tag",
     "Transaction",

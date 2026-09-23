@@ -94,3 +94,13 @@ async def seed_default_app_settings(session: AsyncSession) -> None:
 
     session.add(AppSettings(id=1, currency=get_settings().default_currency))
     await session.commit()
+
+
+async def seed_default_llm_settings(session: AsyncSession) -> None:
+    """Ensures the singleton llm_settings row exists, carrying the env
+    AURUM_LLM_* values over as its defaults (see
+    services/llm_service.get_or_create_llm_settings — this is the boot-time
+    twin of that lazy fallback, same pattern as the app_settings seed)."""
+    from app.services.llm_service import get_or_create_llm_settings
+
+    await get_or_create_llm_settings(session)

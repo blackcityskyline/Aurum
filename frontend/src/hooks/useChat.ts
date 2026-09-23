@@ -32,6 +32,32 @@ export function useSendChatMessage() {
       queryClient.invalidateQueries({
         queryKey: ["chat", "messages", data.session_id],
       });
+      // Chat actions (create/delete transaction, category, account) mutate the
+      // same data the rest of the app reads — without this the Transactions
+      // page keeps showing a stale list until a manual reload.
+      const actions = data.message?.actions ?? [];
+      const touchesTransactions = actions.some((a) =>
+        ["create_transaction", "delete_transaction"].includes(a.type)
+      );
+      const touchesCatalog = actions.some((a) =>
+        ["create_category", "create_account"].includes(a.type)
+      );
+      if (touchesTransactions) {
+        queryClient.invalidateQueries({ queryKey: ["transactions"] });
+        queryClient.invalidateQueries({ queryKey: ["transaction-years"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+        queryClient.invalidateQueries({ queryKey: ["net-worth-summary"] });
+        queryClient.invalidateQueries({ queryKey: ["cash-flow"] });
+        queryClient.invalidateQueries({ queryKey: ["budget-status"] });
+        queryClient.invalidateQueries({ queryKey: ["category-spending-report"] });
+        queryClient.invalidateQueries({ queryKey: ["category-ranking"] });
+        queryClient.invalidateQueries({ queryKey: ["financial-alerts"] });
+        queryClient.invalidateQueries({ queryKey: ["advice"] });
+      }
+      if (touchesCatalog) {
+        queryClient.invalidateQueries({ queryKey: ["accounts"] });
+        queryClient.invalidateQueries({ queryKey: ["categories"] });
+      }
     },
   });
 }
@@ -52,6 +78,10 @@ export function useDeleteChatSession() {
  */
 export function useChat() {
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  // The just-sent message, echoed locally while the request is in flight —
+  // otherwise the user's own bubble only appears after the whole backend
+  // turn (LLM round-trips can take seconds).
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const sessions = useChatSessions();
   const messages = useChatMessages(activeSessionId);
   const sendMutation = useSendChatMessage();
@@ -59,12 +89,15 @@ export function useChat() {
 
   const handleSend = useCallback(
     (message: string) => {
+      setPendingMessage(message);
       sendMutation.mutate(
         { message, session_id: activeSessionId ?? undefined },
         {
           onSuccess: (data) => {
+            setPendingMessage(null);
             setActiveSessionId(data.session_id);
           },
+          onError: () => setPendingMessage(null),
         }
       );
     },
@@ -98,6 +131,7 @@ export function useChat() {
     isLoadingSessions: sessions.isLoading,
     isLoadingMessages: messages.isLoading,
     isSending: sendMutation.isPending,
+    pendingMessage,
     error: sendMutation.error,
     activeSessionId,
     handleSend,

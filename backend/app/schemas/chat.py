@@ -21,6 +21,9 @@ class ChatMessageRead(BaseModel):
     id: int
     role: str
     content: str
+    # Model's chain-of-thought when the backend produced one — the
+    # frontend shows it only when the user ticks "show reasoning".
+    reasoning: str | None = None
     actions: list[ChatAction] = []
     created_at: datetime
 

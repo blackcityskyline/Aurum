@@ -1,7 +1,7 @@
 """Stub LLM provider — echoes input for testing without an API key."""
 import json
 
-from app.api.llm.base import AbstractLLMProvider
+from app.api.llm.base import AbstractLLMProvider, LLMResult
 
 
 class StubProvider(AbstractLLMProvider):
@@ -17,7 +17,7 @@ class StubProvider(AbstractLLMProvider):
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
-    ) -> str:
+    ) -> LLMResult:
         last_user_msg = ""
         for msg in reversed(messages):
             if msg.get("role") == "user":
@@ -26,8 +26,8 @@ class StubProvider(AbstractLLMProvider):
 
         reply = (
             f"[Stub AI] Received your message ({len(last_user_msg)} chars). "
-            "No LLM provider is configured — set AURUM_LLM_PROVIDER to a real "
-            "provider (groq, openai, ollama, etc.) and provide an API key."
+            "No LLM backend is configured — open Settings → AI and pick the "
+            "harness or an API provider."
         )
 
         action = {
@@ -35,4 +35,7 @@ class StubProvider(AbstractLLMProvider):
             "params": {"raw_message": last_user_msg},
             "status": "simulated",
         }
-        return json.dumps({"reply": reply, "actions": [action]})
+        return LLMResult(
+            text=json.dumps({"reply": reply, "actions": [action]}),
+            reasoning="[stub] no reasoning — this backend just echoes.",
+        )

@@ -2,6 +2,8 @@ export interface ChatMessage {
   id: number;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
+  // Model's chain-of-thought — present only for backends that expose it.
+  reasoning?: string | null;
   actions: ChatAction[];
   created_at: string;
 }

@@ -3,18 +3,26 @@
 Works with any endpoint that follows the OpenAI /chat/completions format:
 OpenRouter, OpenAI, Groq, Ollama, LM Studio, vLLM, and others.
 Only base_url, api_key, and model are needed — no provider-specific code.
+
+Implements native tool calling (`supports_tools=True`): the ChatService
+hands it the transaction/category/account tool schemas, executes whatever
+calls the model returns, and feeds the results back. Models that ignore
+tools still work — the ChatService falls back to the prompt-embedded JSON
+protocol when a reply arrives with no tool calls.
 """
 import json
 import logging
 
 import httpx
 
-from app.api.llm.base import AbstractLLMProvider
+from app.api.llm.base import AbstractLLMProvider, LLMResult, ToolCall
 
 logger = logging.getLogger(__name__)
 
 
 class OpenAICompatibleProvider(AbstractLLMProvider):
+    supports_tools = True
+
     def __init__(
         self,
         base_url: str,
@@ -24,9 +32,15 @@ class OpenAICompatibleProvider(AbstractLLMProvider):
         temperature: float = 0.7,
     ):
         if not base_url:
-            raise ValueError("llm_base_url is required for openai_compatible provider")
+            raise ValueError(
+                "base_url is required for the api backend — add a provider "
+                "in Settings → AI"
+            )
         if not model:
-            raise ValueError("llm_model is required for openai_compatible provider")
+            raise ValueError(
+                "model is required for the api backend — pick one in "
+                "Settings → AI"
+            )
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
@@ -37,7 +51,7 @@ class OpenAICompatibleProvider(AbstractLLMProvider):
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
-    ) -> str:
+    ) -> LLMResult:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -50,6 +64,7 @@ class OpenAICompatibleProvider(AbstractLLMProvider):
         }
         if tools:
             payload["tools"] = tools
+            payload["tool_choice"] = "auto"
 
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
@@ -63,5 +78,43 @@ class OpenAICompatibleProvider(AbstractLLMProvider):
         choices = data.get("choices") or []
         if not choices:
             logger.warning("Empty choices in response: %s", json.dumps(data)[:500])
-            return ""
-        return choices[0].get("message", {}).get("content", "") or ""
+            return LLMResult()
+
+        message = choices[0].get("message", {}) or {}
+        tool_calls = [
+            _parse_tool_call(tc)
+            for tc in message.get("tool_calls") or []
+            if isinstance(tc, dict)
+        ]
+        tool_calls = [tc for tc in tool_calls if tc is not None]
+
+        # OpenRouter's reasoning models put the chain-of-thought under
+        # `reasoning` (some others use `reasoning_content`).
+        reasoning = message.get("reasoning") or message.get("reasoning_content")
+
+        return LLMResult(
+            text=message.get("content") or "",
+            tool_calls=tool_calls,
+            reasoning=reasoning or None,
+        )
+
+
+def _parse_tool_call(raw: dict) -> ToolCall | None:
+    """Tolerate the two shapes in the wild: OpenAI's nested
+    {function: {name, arguments: "<json string>"}} and endpoints that
+    already hand arguments as an object."""
+    fn = raw.get("function") if isinstance(raw.get("function"), dict) else raw
+    name = fn.get("name")
+    if not name:
+        logger.warning("Tool call without a name: %s", json.dumps(raw)[:300])
+        return None
+    args = fn.get("arguments", {})
+    if isinstance(args, str):
+        try:
+            args = json.loads(args) if args.strip() else {}
+        except json.JSONDecodeError:
+            logger.warning("Unparseable tool arguments for %s: %r", name, args[:300])
+            args = {"_raw": args}
+    if not isinstance(args, dict):
+        args = {"_raw": args}
+    return ToolCall(id=raw.get("id") or name, name=name, arguments=args)

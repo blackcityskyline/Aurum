@@ -1,35 +1,35 @@
 """LLM provider registry — factory that returns the configured provider.
 
-Selects provider by settings.llm_provider name. No hardcoded third-party
-services: anything OpenAI-compatible is configured purely via base_url /
-api_key / model.
+Configuration now comes from the llm_settings/llm_providers tables (via
+services/llm_service.get_llm_config → base.LLMConfig), not directly from
+env: the Settings → AI UI edits those rows at runtime. "harness"/"api"
+are the two user-facing backends (plus "stub" for dev/tests); the old env
+names (opencode/openai_compatible) still map through the seed fallback.
 """
-from app.api.llm.base import AbstractLLMProvider
+from app.api.llm.base import AbstractLLMProvider, LLMConfig
 from app.api.llm.stub import StubProvider
-from app.core.config import Settings
 
 
-def get_provider(settings: Settings) -> AbstractLLMProvider:
-    name = settings.llm_provider
+def get_provider(config: LLMConfig) -> AbstractLLMProvider:
+    name = config.mode
 
-    if name == "opencode":
+    if name == "harness":
         from app.api.llm.opencode_harness import OpenCodeHarnessProvider
-        return OpenCodeHarnessProvider(base_url=settings.opencode_url)
+        return OpenCodeHarnessProvider(base_url=config.harness_url)
 
-    if name == "openai_compatible":
+    if name == "api":
         from app.api.llm.openai_compatible import OpenAICompatibleProvider
         return OpenAICompatibleProvider(
-            base_url=settings.llm_base_url,
-            api_key=settings.llm_api_key,
-            model=settings.llm_model,
-            max_tokens=settings.llm_max_tokens,
-            temperature=settings.llm_temperature,
+            base_url=config.base_url,
+            api_key=config.api_key,
+            model=config.model,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
         )
 
     if name == "stub":
         return StubProvider()
 
-    available = "stub, opencode, openai_compatible"
     raise ValueError(
-        f"Unknown LLM provider '{name}'. Available: {available}"
+        f"Unknown LLM backend mode '{name}'. Available: harness, api, stub"
     )

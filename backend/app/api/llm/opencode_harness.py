@@ -1,10 +1,9 @@
 """OpenCode harness provider — calls a running opencode serve instance."""
-import json
 import logging
 
 import httpx
 
-from app.api.llm.base import AbstractLLMProvider
+from app.api.llm.base import AbstractLLMProvider, LLMResult
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +13,10 @@ class OpenCodeHarnessProvider(AbstractLLMProvider):
 
     The serve instance handles all provider/model logic, auth, and tool use.
     Aurum only passes the user message and gets back the assistant reply.
+
+    No native tool calling on our side (`supports_tools=False`): opencode
+    works from a flattened prompt, so the ChatService uses the
+    prompt-embedded JSON action protocol with this backend instead.
     """
 
     def __init__(self, base_url: str = "http://127.0.0.1:4096"):
@@ -23,7 +26,7 @@ class OpenCodeHarnessProvider(AbstractLLMProvider):
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
-    ) -> str:
+    ) -> LLMResult:
         # Build the user message text from the message history.
         # We send the full history as context, but opencode works with
         # individual prompts — so we flatten the conversation into one prompt.
@@ -48,10 +51,13 @@ class OpenCodeHarnessProvider(AbstractLLMProvider):
             msg_resp.raise_for_status()
             data = msg_resp.json()
 
-            # 3. Extract text from response parts
+            # 3. Extract text (and reasoning, when present) from the parts
             parts = data.get("parts", [])
             text_parts = [p["text"] for p in parts if p.get("type") == "text"]
-            reply = "\n".join(text_parts) if text_parts else ""
+            reasoning_parts = [
+                p["text"] for p in parts
+                if p.get("type") in ("reasoning", "thinking") and p.get("text")
+            ]
 
             # 4. Clean up session (optional, keeps opencode tidy)
             try:
@@ -59,7 +65,10 @@ class OpenCodeHarnessProvider(AbstractLLMProvider):
             except Exception:
                 pass  # not critical
 
-            return reply
+            return LLMResult(
+                text="\n".join(text_parts),
+                reasoning="\n".join(reasoning_parts) or None,
+            )
 
     def _build_prompt(self, messages: list[dict]) -> str:
         """Flatten message history into a single prompt for opencode.
@@ -77,4 +86,6 @@ class OpenCodeHarnessProvider(AbstractLLMProvider):
                 parts.append(f"User: {content}")
             elif role == "assistant":
                 parts.append(f"Assistant: {content}")
+            elif role == "tool":
+                parts.append(f"[Tool result]\n{content}")
         return "\n\n".join(parts)

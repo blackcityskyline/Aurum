@@ -2,10 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_session
-from app.core.config import get_settings
+from app.api.llm.registry import get_provider
 from app.models.chat import ChatMessage, ChatSession
 from app.schemas.chat import (
     ChatMessageRead,
@@ -22,8 +21,18 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 async def send_message(
     payload: ChatRequest, session: AsyncSession = Depends(get_session)
 ) -> ChatResponse:
-    settings = get_settings()
-    svc = ChatService(session, settings)
+    # Backend mode/provider/model come from the llm_* tables (Settings →
+    # AI), not env — resolved fresh per request so a switch in the UI takes
+    # effect on the next message without a restart.
+    from app.services.llm_service import get_llm_config
+
+    config = await get_llm_config(session)
+    try:
+        provider = get_provider(config)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    svc = ChatService(session, provider, config)
     try:
         return await svc.process_message(payload.message, payload.session_id)
     except ValueError as e:
@@ -76,6 +85,7 @@ async def list_messages(
             id=m.id,
             role=m.role,
             content=m.content,
+            reasoning=m.reasoning,
             actions=_parse_actions(m.actions_json),
             created_at=m.created_at,
         )

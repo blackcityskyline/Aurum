@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Plus, Trash2 } from "lucide-react";
+import { Brain, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
+import { ModelPicker } from "@/components/chat/ModelPicker";
 import { useChat } from "@/hooks/useChat";
+import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import { useTranslation } from "@/lib/i18n";
-import type { ChatAction } from "@/types/chat";
+import type { ChatAction, ChatMessage } from "@/types/chat";
 
 const ACTION_COLORS: Record<string, string> = {
   executed: "bg-success/15 text-success",
@@ -26,6 +28,65 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Bouncing-dots "assistant is working" bubble — shown for the whole
+ * backend turn, since responses aren't streamed. */
+function ThinkingIndicator() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex justify-start chat-message-in">
+      <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-4 py-3">
+        <span className="flex gap-1">
+          <span className="chat-dot h-1.5 w-1.5 rounded-full bg-text-muted" />
+          <span className="chat-dot chat-dot-2 h-1.5 w-1.5 rounded-full bg-text-muted" />
+          <span className="chat-dot chat-dot-3 h-1.5 w-1.5 rounded-full bg-text-muted" />
+        </span>
+        <span className="text-xs text-text-muted">{t("chat.thinking")}</span>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({
+  msg,
+  showReasoning,
+}: {
+  msg: ChatMessage;
+  showReasoning: boolean;
+}) {
+  const { t } = useTranslation();
+  const isUser = msg.role === "user";
+  return (
+    <div className={`flex chat-message-in ${isUser ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm ${
+          isUser ? "bg-primary text-white" : "bg-surface-2 text-text-primary"
+        }`}
+      >
+        {showReasoning && msg.reasoning && (
+          <details className="mb-2 rounded-lg bg-surface-1/70 p-2 text-xs text-text-secondary">
+            <summary className="flex cursor-pointer items-center gap-1 text-text-muted">
+              <Brain size={12} />
+              {t("chat.reasoning")}
+            </summary>
+            <p className="mt-1 whitespace-pre-wrap">{msg.reasoning}</p>
+          </details>
+        )}
+        <p className="whitespace-pre-wrap">{msg.content}</p>
+        {msg.actions.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {msg.actions.map((a, i) => (
+              <ActionBadge key={i} action={a} />
+            ))}
+          </div>
+        )}
+        <p className={`mt-1 text-xs ${isUser ? "text-white/60" : "text-text-muted"}`}>
+          {formatTime(msg.created_at)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function ChatPage() {
   const { t } = useTranslation();
   const {
@@ -34,6 +95,8 @@ export function ChatPage() {
     isLoadingSessions,
     isLoadingMessages,
     isSending,
+    pendingMessage,
+    error,
     activeSessionId,
     handleSend,
     handleNewSession,
@@ -42,12 +105,15 @@ export function ChatPage() {
   } = useChat();
 
   const [input, setInput] = useState("");
+  const [showReasoning, setShowReasoning] = useLocalStorageState(
+    "aurum:chat-show-reasoning",
+    false
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, pendingMessage, isSending]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,51 +169,62 @@ export function ChatPage() {
 
       {/* Chat area */}
       <Card className="flex min-w-0 flex-1 flex-col">
-        <CardHeader>
+        <CardHeader className="flex-wrap">
           <CardTitle>{activeSessionId ? t("chat.title") : t("chat.newChat")}</CardTitle>
+          <div className="flex items-center gap-3">
+            <label
+              className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary"
+              title={t("chat.showReasoningHint")}
+            >
+              <input
+                type="checkbox"
+                checked={showReasoning}
+                onChange={(e) => setShowReasoning(e.target.checked)}
+                className="h-3.5 w-3.5 accent-[var(--series-1)]"
+              />
+              <Brain size={13} />
+              {t("chat.showReasoning")}
+            </label>
+            <ModelPicker />
+          </div>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col">
           {/* Messages */}
           <div className="flex-1 overflow-y-auto space-y-4 pb-4">
             {isLoadingMessages && activeSessionId ? (
               <p className="py-10 text-center text-sm text-text-muted">{t("common.loading")}</p>
-            ) : messages.length === 0 ? (
+            ) : messages.length === 0 && !pendingMessage ? (
               <div className="flex flex-col items-center justify-center py-16 text-text-muted">
                 <MessageSquare size={48} strokeWidth={1} className="mb-4 opacity-30" />
                 <p className="text-sm">{t("chat.empty")}</p>
               </div>
             ) : (
-              messages.map((msg) => (
-                <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm ${
-                      msg.role === "user"
-                        ? "bg-primary text-white"
-                        : "bg-surface-2 text-text-primary"
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    {msg.actions.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {msg.actions.map((a, i) => (
-                          <ActionBadge key={i} action={a} />
-                        ))}
-                      </div>
-                    )}
-                    <p className={`mt-1 text-xs ${msg.role === "user" ? "text-white/60" : "text-text-muted"}`}>
-                      {formatTime(msg.created_at)}
-                    </p>
+              <>
+                {messages.map((msg) => (
+                  <MessageBubble key={msg.id} msg={msg} showReasoning={showReasoning} />
+                ))}
+                {pendingMessage && (
+                  <div className="flex justify-end chat-message-in">
+                    <div className="max-w-[80%] rounded-xl bg-primary px-4 py-2.5 text-sm text-white chat-pulse">
+                      <p className="whitespace-pre-wrap">{pendingMessage}</p>
+                    </div>
                   </div>
-                </div>
-              ))
+                )}
+                {isSending && <ThinkingIndicator />}
+              </>
             )}
             <div ref={messagesEndRef} />
           </div>
 
+          {error && (
+            <p className="mb-2 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">
+              {error instanceof Error ? error.message : t("chat.sendError")}
+            </p>
+          )}
+
           {/* Input */}
           <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border pt-3">
             <input
-              ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}

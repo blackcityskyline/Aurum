@@ -24,6 +24,11 @@ class ChatMessage(Base):
     session_id: Mapped[int] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String(20))  # user | assistant | system | tool
     content: Mapped[str] = mapped_column(Text)
+    # Model's chain-of-thought when the backend produced one (OpenRouter
+    # returns `reasoning` for reasoning models). Nullable — plain models
+    # and harness replies usually have none, and the frontend only shows it
+    # when the user ticks "show reasoning".
+    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     actions_json: Mapped[str | None] = mapped_column(Text)  # JSON array of actions
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
