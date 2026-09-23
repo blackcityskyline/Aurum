@@ -8,9 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session
+from app.api.llm.registry import HARNESSES, get_harness
 from app.api.llm.runtime import fetch_models, test_backend
 from app.models.llm import LlmProvider
 from app.schemas.llm import (
+    HarnessModelRead,
+    HarnessModelsResponse,
     LlmModelsRequest,
     LlmModelsResponse,
     LlmProviderCreate,
@@ -21,6 +24,7 @@ from app.schemas.llm import (
     LlmTestResponse,
 )
 from app.services.llm_service import (
+    get_llm_config,
     get_or_create_llm_settings,
     get_provider_or_404,
     list_providers,
@@ -33,7 +37,9 @@ async def _read(session: AsyncSession) -> LlmSettingsRead:
     settings = await get_or_create_llm_settings(session)
     return LlmSettingsRead(
         mode=settings.mode,
+        harness_type=settings.harness_type,
         harness_url=settings.harness_url,
+        harness_model=settings.harness_model,
         max_tokens=settings.max_tokens,
         temperature=settings.temperature,
         active_provider_id=settings.active_provider_id,
@@ -57,6 +63,19 @@ async def update_config(
         provider_id = data["active_provider_id"]
         if provider_id is not None and await session.get(LlmProvider, provider_id) is None:
             raise HTTPException(status_code=400, detail="Provider not found")
+    # Validated against the driver registry (not a schema Literal) so a
+    # new harness ships by adding to HARNESSES — schemas stay untouched.
+    if "harness_type" in data and data["harness_type"] not in HARNESSES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown harness type '{data['harness_type']}'. "
+                f"Available: {', '.join(sorted(HARNESSES))}"
+            ),
+        )
+    if "harness_model" in data:
+        # "" (the picker's "default" option) and null both mean "no pin".
+        data["harness_model"] = data["harness_model"] or None
     # LlmSettingsUpdate.mode is Literal[harness, api] — "stub" stays
     # reachable only through env/direct SQL on purpose (it's a dev mode).
     for field, value in data.items():
@@ -133,20 +152,58 @@ async def delete_provider(
 async def models(
     payload: LlmModelsRequest, session: AsyncSession = Depends(get_session)
 ) -> LlmModelsResponse:
-    base_url, api_key = payload.base_url, payload.api_key
+    """Model catalogue of an OpenAI-compatible endpoint. Two callers: the
+    chat picker (provider_id only — the saved row carries url + key) and the
+    provider dialog (typed base_url/api_key, optionally with provider_id so a
+    stored key doesn't have to be re-entered). A typed url wins over the
+    stored one, since the dialog loads models *before* saving the edit."""
+    base_url = (payload.base_url or "").strip()
     if payload.provider_id is not None:
         provider = await get_provider_or_404(session, payload.provider_id)
-        base_url, api_key = provider.base_url, provider.api_key
+        base_url = base_url or provider.base_url
+        api_key = payload.api_key if payload.api_key is not None else provider.api_key
+    else:
+        api_key = payload.api_key
+
+    if not base_url:
+        raise HTTPException(
+            status_code=400, detail="Either provider_id or base_url is required"
+        )
+    if not base_url.startswith(("http://", "https://")):
+        raise HTTPException(
+            status_code=400, detail="base_url must start with http:// or https://"
+        )
     try:
         return LlmModelsResponse(models=await fetch_models(base_url, api_key))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch models: {e}")
 
 
+@router.get("/harness/models", response_model=HarnessModelsResponse)
+async def harness_models(session: AsyncSession = Depends(get_session)) -> HarnessModelsResponse:
+    """Model catalogue of the configured harness driver — generic rows, so
+    the chat picker renders identically whatever harness is in charge."""
+    config = await get_llm_config(session)
+    try:
+        models = await get_harness(config).list_models()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch harness models: {e}")
+    return HarnessModelsResponse(
+        models=[
+            HarnessModelRead(
+                id=m.id,
+                label=m.label,
+                provider=m.provider,
+                context=m.context,
+                tool_calling=m.tool_calling,
+            )
+            for m in models
+        ]
+    )
+
+
 @router.post("/test", response_model=LlmTestResponse)
 async def test(session: AsyncSession = Depends(get_session)) -> LlmTestResponse:
-    from app.services.llm_service import get_llm_config
-
     config = await get_llm_config(session)
     try:
         detail = await test_backend(config)

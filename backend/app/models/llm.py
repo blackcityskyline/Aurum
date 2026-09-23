@@ -48,11 +48,18 @@ class LlmSettings(Base):
     harness_url: Mapped[str] = mapped_column(
         String(300), nullable=False, default="http://host.docker.internal:4096"
     )
+    # Which harness *driver* answers (key into api/llm/registry.HARNESSES).
+    # Stored, not hardcoded, so a second harness is a drop-in module + a
+    # registry line — no migration, no UI changes.
+    harness_type: Mapped[str] = mapped_column(String(30), nullable=False, default="opencode")
+    # Model pinned inside that harness — opaque driver-side id
+    # ("opencode/big-pickle"); NULL = the harness's own default.
+    harness_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Which LlmProvider row is in use for api mode.
     active_provider_id: Mapped[int | None] = mapped_column(
         ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True
     )
-    # Generation parameters (api mode; harness mode is configured on the
-    # opencode side itself).
+    # Generation parameters (api mode; harness mode keeps its own tuning
+    # opencode-side — only the model is chosen here).
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=2048)
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)

@@ -39,7 +39,9 @@ class LlmProviderUpdate(BaseModel):
 
 class LlmSettingsRead(BaseModel):
     mode: Literal["harness", "api", "stub"]
+    harness_type: str
     harness_url: str
+    harness_model: str | None
     max_tokens: int
     temperature: float
     active_provider_id: int | None
@@ -48,7 +50,11 @@ class LlmSettingsRead(BaseModel):
 
 class LlmSettingsUpdate(BaseModel):
     mode: Literal["harness", "api"] | None = None
+    harness_type: str | None = Field(default=None, min_length=1, max_length=30)
     harness_url: str | None = Field(default=None, min_length=1, max_length=300, pattern=r"^https?://")
+    # Opaque driver-side id ("opencode/big-pickle"); "" or null → clear
+    # the pin and fall back to the harness's own default model.
+    harness_model: str | None = Field(default=None, max_length=200)
     max_tokens: int | None = Field(default=None, ge=256, le=32768)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     active_provider_id: int | None = None
@@ -58,15 +64,35 @@ class LlmModelsRequest(BaseModel):
     """Fetch the model catalogue from an OpenAI-compatible /models endpoint.
     Works with unsaved form values (base_url/api_key straight from the UI),
     which is the point: the model picker must offer real ids *before* the
-    provider row is committed."""
+    provider row is committed.
 
-    base_url: str = Field(min_length=1, max_length=300, pattern=r"^https?://")
+    `base_url` is optional because a saved row can answer on its own — the
+    chat's model picker sends just `provider_id`. Which of the two must be
+    present is a cross-field rule, so it's enforced in the route rather than
+    here (either way a request with neither gets a 400, never a 500)."""
+
+    base_url: str | None = Field(default=None, max_length=300)
     api_key: str | None = Field(default=None, max_length=500)
     provider_id: int | None = None  # fill base_url/api_key from a saved row
 
 
 class LlmModelsResponse(BaseModel):
     models: list[str]
+
+
+class HarnessModelRead(BaseModel):
+    """Generic harness model row (base.HarnessModel) — `id` is opaque and
+    driver-specific, everything else is display-only."""
+
+    id: str
+    label: str
+    provider: str
+    context: int | None = None
+    tool_calling: bool = False
+
+
+class HarnessModelsResponse(BaseModel):
+    models: list[HarnessModelRead]
 
 
 class LlmTestResponse(BaseModel):

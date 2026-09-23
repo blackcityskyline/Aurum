@@ -9,13 +9,23 @@ hands it the transaction/category/account tool schemas, executes whatever
 calls the model returns, and feeds the results back. Models that ignore
 tools still work — the ChatService falls back to the prompt-embedded JSON
 protocol when a reply arrives with no tool calls.
+
+Endpoint failures (bad key, rate limit, downtime) surface as
+errors.LLMProviderError rather than an httpx traceback — see that module.
 """
+import asyncio
 import json
 import logging
 
 import httpx
 
 from app.api.llm.base import AbstractLLMProvider, LLMResult, ToolCall
+from app.api.llm.errors import (
+    LLMProviderError,
+    describe_transport_error,
+    describe_upstream_error,
+    retry_after_seconds,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +57,31 @@ class OpenAICompatibleProvider(AbstractLLMProvider):
         self.max_tokens = max_tokens
         self.temperature = temperature
 
+    async def _post(
+        self, client: httpx.AsyncClient, payload: dict, headers: dict
+    ) -> httpx.Response:
+        """POST /chat/completions with the endpoint's failure modes turned
+        into LLMProviderError — the chat route maps that to a 502 with a
+        readable detail instead of an unhandled 500.
+
+        One short retry on 429 first: free-tier endpoints rate-limit in
+        bursts, so a single pause usually converts a failed turn into a
+        successful one instead of an error the user has to resend."""
+        url = f"{self.base_url}/chat/completions"
+        try:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code == 429:
+                await asyncio.sleep(retry_after_seconds(resp))
+                resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            return resp
+        except httpx.HTTPStatusError as e:
+            raise LLMProviderError(
+                describe_upstream_error(e.response, self.base_url)
+            ) from e
+        except httpx.HTTPError as e:
+            raise LLMProviderError(describe_transport_error(e, self.base_url)) from e
+
     async def chat(
         self,
         messages: list[dict],
@@ -67,13 +102,14 @@ class OpenAICompatibleProvider(AbstractLLMProvider):
             payload["tool_choice"] = "auto"
 
         async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                headers=headers,
-            )
-            resp.raise_for_status()
+            resp = await self._post(client, payload, headers)
+
+        try:
             data = resp.json()
+        except ValueError as e:
+            raise LLMProviderError(
+                f"{self.base_url} returned a non-JSON body"
+            ) from e
 
         choices = data.get("choices") or []
         if not choices:

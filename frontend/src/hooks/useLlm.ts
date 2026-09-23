@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createLlmProvider,
   deleteLlmProvider,
+  fetchHarnessModels,
   fetchLlmConfig,
   fetchLlmModels,
   testLlmBackend,
@@ -15,9 +16,24 @@ import type {
 } from "@/types/llm";
 
 const CONFIG_KEY = ["llm", "config"];
+const HARNESS_MODELS_KEY = ["llm", "harness-models"];
 
 export function useLlmConfig() {
   return useQuery({ queryKey: CONFIG_KEY, queryFn: fetchLlmConfig });
+}
+
+/** Harness model catalogue — only worth fetching in harness mode (the
+ * catalogue itself is a capability: a driver without one returns 400 and
+ * the picker falls back to a plain badge). */
+export function useHarnessModels() {
+  const { data: config } = useLlmConfig();
+  return useQuery({
+    queryKey: HARNESS_MODELS_KEY,
+    queryFn: fetchHarnessModels,
+    enabled: config?.mode === "harness",
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
 }
 
 /** Every mutation below invalidates the config query — the card is one

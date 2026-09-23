@@ -93,6 +93,13 @@
   --color-success: var(--success);
   --color-danger: var(--danger);
 
+  /* UI accents that the chat/settings cards speak in (`bg-primary`,
+     `text-warning`, …). Aliased to the chart series so the accent follows
+     the same light/dark values as everything else in the palette. */
+  --color-primary: var(--series-1);
+  --color-warning: var(--series-2);
+  --color-info: var(--series-1);
+
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
   --color-series-3: var(--series-3);

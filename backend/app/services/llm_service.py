@@ -90,7 +90,9 @@ async def get_llm_config(session: AsyncSession) -> LLMConfig:
     settings = await get_or_create_llm_settings(session)
     config = LLMConfig(
         mode=settings.mode,
+        harness_type=settings.harness_type,
         harness_url=settings.harness_url,
+        harness_model=settings.harness_model or "",
         max_tokens=settings.max_tokens,
         temperature=settings.temperature,
     )

@@ -299,3 +299,352 @@ async def test_unknown_action_type_fails_gracefully(test_sessionmaker, bad_type)
         )
     assert result.status == "failed"
     assert "Unknown action type" in result.error
+
+
+# ------------------------------------------------------------ harness driver
+
+
+async def test_harness_model_pin_roundtrip(client):
+    """harness_model is persisted, and "" (the picker's "default" option)
+    clears the pin so opencode's own default answers again."""
+    assert (await client.get("/llm/config")).json()["harness_model"] is None
+
+    pinned = await client.patch("/llm/config", json={"harness_model": "opencode/big-pickle"})
+    assert pinned.status_code == 200
+    assert pinned.json()["harness_model"] == "opencode/big-pickle"
+    assert (await client.get("/llm/config")).json()["harness_model"] == "opencode/big-pickle"
+
+    cleared = await client.patch("/llm/config", json={"harness_model": ""})
+    assert cleared.json()["harness_model"] is None
+
+
+async def test_harness_type_validated_against_registry(client):
+    # Unknown driver → 400, with the available keys in the detail so a
+    # future UI could enumerate them from the registry.
+    bad = await client.patch("/llm/config", json={"harness_type": "langchain"})
+    assert bad.status_code == 400
+    assert "opencode" in bad.json()["detail"]
+
+    ok = await client.patch("/llm/config", json={"harness_type": "opencode"})
+    assert ok.status_code == 200
+    assert ok.json()["harness_type"] == "opencode"
+
+
+async def test_harness_models_endpoint_returns_generic_rows(client, monkeypatch):
+    """GET /llm/harness/models serves whatever the active driver's
+    list_models() returns — rows are generic, not opencode-shaped."""
+    from app.api.llm.base import HarnessModel
+    from app.api.llm.opencode_harness import OpenCodeHarnessProvider
+
+    async def fake_list_models(self):
+        return [
+            HarnessModel(
+                id="opencode/big-pickle",
+                label="Big Pickle",
+                provider="OpenCode Zen",
+                context=200000,
+                tool_calling=True,
+            )
+        ]
+
+    monkeypatch.setattr(OpenCodeHarnessProvider, "list_models", fake_list_models)
+
+    resp = await client.get("/llm/harness/models")
+    assert resp.status_code == 200
+    row = resp.json()["models"][0]
+    assert row["id"] == "opencode/big-pickle"
+    assert row["provider"] == "OpenCode Zen"
+    assert row["context"] == 200000
+    assert row["tool_calling"] is True
+
+
+def test_parse_provider_catalogue_filters_to_connected():
+    """opencode's GET /provider lists every provider on the internet; only
+    `connected` ones (credentials work) may reach the picker — otherwise
+    the user could pick a model that never answers."""
+    from app.api.llm.opencode_harness import parse_provider_catalogue
+
+    payload = {
+        "all": [
+            {
+                "id": "opencode",
+                "name": "OpenCode Zen",
+                "models": {
+                    "big-pickle": {
+                        "name": "Big Pickle",
+                        "limit": {"context": 1000},
+                        "capabilities": {"toolcall": True},
+                    }
+                },
+            },
+            {"id": "nokey", "name": "No Key", "models": {"m1": {"name": "M1"}}},
+        ],
+        "connected": ["opencode"],
+    }
+
+    models = parse_provider_catalogue(payload)
+    assert [m.id for m in models] == ["opencode/big-pickle"]
+    assert models[0].provider == "OpenCode Zen"
+    assert models[0].context == 1000
+    assert models[0].tool_calling is True
+
+    # Older opencode without the `connected` field → list everything.
+    no_field = dict(payload)
+    no_field.pop("connected")
+    assert len(parse_provider_catalogue(no_field)) == 2
+
+    # Present but empty → no credentials anywhere → nothing to offer.
+    assert parse_provider_catalogue({"all": payload["all"], "connected": []}) == []
+
+    with pytest.raises(ValueError):
+        parse_provider_catalogue({"unexpected": True})
+
+
+def test_split_model_keeps_slashes_inside_model_ids():
+    from app.api.llm.opencode_harness import _split_model
+
+    assert _split_model(None) is None
+    assert _split_model("") is None
+    # No provider part → not a valid pin, harness default stays in charge.
+    assert _split_model("big-pickle") is None
+    assert _split_model("opencode/big-pickle") == ("opencode", "big-pickle")
+    # Model ids may contain slashes of their own — split on the first one.
+    assert _split_model("deepinfra/meta-llama/x") == ("deepinfra", "meta-llama/x")
+
+
+def test_registry_builds_harness_driver_with_pinned_model():
+    from app.api.llm.opencode_harness import OpenCodeHarnessProvider
+    from app.api.llm.registry import get_harness
+
+    config = LLMConfig(
+        mode="harness",
+        harness_type="opencode",
+        harness_url="http://harness:4096/",
+        harness_model="opencode/big-pickle",
+    )
+    driver = get_harness(config)
+    assert isinstance(driver, OpenCodeHarnessProvider)
+    assert driver.base_url == "http://harness:4096"  # trailing / trimmed
+    assert driver.model == "opencode/big-pickle"
+    assert driver.supports_model_choice is True
+
+    with pytest.raises(ValueError, match="Unknown harness type"):
+        get_harness(LLMConfig(harness_type="nonexistent"))
+
+
+# ------------------------------------------------------------ models route
+
+
+async def test_models_route_accepts_provider_id_alone(client, monkeypatch):
+    """The chat's model picker sends only `provider_id` — base_url used to be
+    required by the schema, so every picker request came back 422, the
+    catalogue stayed empty and the <select> stayed disabled (clicking its
+    arrow did nothing). The saved row alone must be enough."""
+    from app.api.routes import llm as llm_routes
+
+    seen: dict = {}
+
+    async def fake_fetch_models(base_url, api_key):
+        seen.update(base_url=base_url, api_key=api_key)
+        return ["a/model:free", "b/model"]
+
+    monkeypatch.setattr(llm_routes, "fetch_models", fake_fetch_models)
+
+    created = await client.post(
+        "/llm/providers",
+        json={
+            "name": "OpenRouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-secret-123",
+        },
+    )
+    resp = await client.post("/llm/models", json={"provider_id": created.json()["id"]})
+
+    assert resp.status_code == 200
+    assert resp.json()["models"] == ["a/model:free", "b/model"]
+    assert seen == {
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "sk-secret-123",
+    }
+
+
+async def test_models_route_prefers_typed_values_over_the_stored_row(client, monkeypatch):
+    """ProviderDialog loads models *before* saving the edit, so a url/key
+    typed into the form wins over what the row still stores; omitting the
+    key keeps the stored one (the server never has it in the payload)."""
+    from app.api.routes import llm as llm_routes
+
+    seen: dict = {}
+
+    async def fake_fetch_models(base_url, api_key):
+        seen.update(base_url=base_url, api_key=api_key)
+        return ["m1"]
+
+    monkeypatch.setattr(llm_routes, "fetch_models", fake_fetch_models)
+
+    created = await client.post(
+        "/llm/providers",
+        json={
+            "name": "OpenRouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "sk-secret-123",
+        },
+    )
+    pid = created.json()["id"]
+
+    await client.post(
+        "/llm/models",
+        json={"provider_id": pid, "base_url": "http://localhost:11434/v1", "api_key": "typed"},
+    )
+    assert seen == {"base_url": "http://localhost:11434/v1", "api_key": "typed"}
+
+    await client.post(
+        "/llm/models", json={"provider_id": pid, "base_url": "http://localhost:11434/v1"}
+    )
+    assert seen["api_key"] == "sk-secret-123"
+
+
+async def test_models_route_rejects_requests_with_nothing_to_fetch_from(client):
+    # Neither id nor url →400 with the rule spelled out, not a 500.
+    neither = await client.post("/llm/models", json={})
+    assert neither.status_code == 400
+    assert "provider_id" in neither.json()["detail"]
+
+    # A url that isn't one → 400 before any network call happens.
+    not_a_url = await client.post("/llm/models", json={"base_url": "openrouter.ai"})
+    assert not_a_url.status_code == 400
+    assert "http" in not_a_url.json()["detail"]
+
+    # Unknown provider id → 404 from the row lookup.
+    missing = await client.post("/llm/models", json={"provider_id": 424242})
+    assert missing.status_code == 404
+
+
+# ------------------------------------------------------- upstream failures
+
+
+def _upstream(status: int, *, json_body=None, text=None, headers=None) -> "httpx.Response":
+    import httpx
+
+    return httpx.Response(
+        status,
+        json=json_body,
+        text=text,
+        headers=headers or {},
+        request=httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions"),
+    )
+
+
+def test_upstream_error_is_described_for_humans():
+    """A provider's HTTP failure must reach the UI as a sentence (what
+    happened + what the provider said), never as an httpx traceback."""
+    import httpx
+
+    from app.api.llm.errors import describe_transport_error, describe_upstream_error
+
+    rate_limited = _upstream(429, json_body={"error": {"message": "Rate limit exceeded"}})
+    msg = describe_upstream_error(rate_limited, "https://openrouter.ai/api/v1")
+    assert "HTTP 429" in msg
+    assert "rate limited" in msg
+    assert "Rate limit exceeded" in msg
+
+    # HTML error page — no provider message to quote, hint alone must read.
+    page = _upstream(500, text="<html><body>oops</body></html>")
+    assert "provider had an internal error" in describe_upstream_error(page, "https://x/v1")
+
+    # Unknown status still yields a usable sentence.
+    weird = _upstream(418, json_body={"message": "teapot"})
+    assert "HTTP 418" in describe_upstream_error(weird, "https://x/v1")
+
+    refused = httpx.ConnectError("refused", request=httpx.Request("GET", "http://h:1/"))
+    assert "Cannot reach http://h:1/" in describe_transport_error(refused, "http://h:1/")
+    assert "connection refused" in describe_transport_error(refused, "http://h:1/")
+
+
+def test_retry_after_is_honoured_but_capped():
+    from app.api.llm.errors import retry_after_seconds
+
+    assert retry_after_seconds(_upstream(429)) == 1.0  # header absent → default
+    assert retry_after_seconds(_upstream(429, headers={"retry-after": "0"})) == 0.0
+    assert retry_after_seconds(_upstream(429, headers={"retry-after": "120"})) == 3.0  # capped
+    assert retry_after_seconds(_upstream(429, headers={"retry-after": "soon"})) == 1.0
+
+
+async def test_openai_provider_retries_once_on_429_then_raises_readable_error(monkeypatch):
+    """Free-tier rate limits come in bursts: one short retry first, and if
+    the endpoint still says 429 the failure is LLMProviderError — the chat
+    route turns that into a 502 detail, not an unhandled 500."""
+    import httpx
+
+    from app.api.llm.errors import LLMProviderError
+    from app.api.llm.openai_compatible import OpenAICompatibleProvider
+
+    class FakeClient:
+        def __init__(self, *a, **kw):
+            self.calls = 0
+            self.responses = [
+                _upstream(429, json_body={"error": {"message": "slow down"}},
+                          headers={"retry-after": "0"}),
+                _upstream(429, json_body={"error": {"message": "slow down"}},
+                          headers={"retry-after": "0"}),
+            ]
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            self.calls += 1
+            return self.responses[min(self.calls, len(self.responses)) - 1]
+
+    holder: dict = {}
+
+    def factory(*a, **kw):
+        holder["client"] = FakeClient(*a, **kw)
+        return holder["client"]
+
+    monkeypatch.setattr(httpx, "AsyncClient", factory)
+
+    provider = OpenAICompatibleProvider(base_url="https://openrouter.ai/api/v1", model="m")
+    with pytest.raises(LLMProviderError) as exc:
+        await provider.chat([{"role": "user", "content": "hi"}])
+
+    assert "HTTP 429" in str(exc.value)
+    assert holder["client"].calls == 2  # exactly one retry, no loop
+
+
+async def test_chat_route_answers_502_with_the_provider_detail(client, monkeypatch):
+    """The endpoint failing is a gateway problem, not an Aurum bug: 502 with
+    the readable message the UI shows, instead of "internal server error"."""
+    from app.api.llm.errors import LLMProviderError
+    from app.api.routes import chat as chat_routes
+
+    async def boom(self, message, session_id=None):
+        raise LLMProviderError(
+            "https://openrouter.ai/api/v1 answered HTTP 429: rate limited — "
+            "wait a moment and retry, or pick another model"
+        )
+
+    monkeypatch.setattr(chat_routes.ChatService, "process_message", boom)
+
+    resp = await client.post("/chat", json={"message": "привет"})
+    assert resp.status_code == 502
+    assert "HTTP 429" in resp.json()["detail"]
+
+
+async def test_create_transaction_reports_missing_required_fields(test_sessionmaker):
+    """A model that skips account_id/amount used to blow up on params[…]
+    and report a bare KeyError back into the chat."""
+    from app.schemas.chat import ChatAction
+
+    async with test_sessionmaker() as session:
+        svc = ChatService(session, FakeToolProvider([]), _config())
+        result = await svc._execute_action(
+            ChatAction(type="create_transaction", params={"type": "expense"}, status="pending")
+        )
+
+    assert result.status == "failed"
+    assert "account_id" in result.error
+    assert "amount" in result.error

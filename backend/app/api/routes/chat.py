@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_session
+from app.api.llm.errors import LLMProviderError
 from app.api.llm.registry import get_provider
 from app.models.chat import ChatMessage, ChatSession
 from app.schemas.chat import (
@@ -35,6 +36,12 @@ async def send_message(
     svc = ChatService(session, provider, config)
     try:
         return await svc.process_message(payload.message, payload.session_id)
+    except LLMProviderError as e:
+        # The LLM endpoint's own answer (bad key, rate limit, outage) — a
+        # gateway-level failure, not an Aurum bug: 502 with the readable
+        # detail instead of an unhandled 500 the UI can only call
+        # "internal server error".
+        raise HTTPException(status_code=502, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

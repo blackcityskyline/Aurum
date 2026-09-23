@@ -474,6 +474,14 @@ class ChatService:
     async def _create_transaction(self, action: ChatAction) -> ChatAction:
         from app.models.enums import TransactionType as TT
         params = action.params
+        # Required tool args checked up front: a model that skips one used
+        # to blow up on params["…"] and report a bare KeyError back to the
+        # user, which says nothing about what it got wrong.
+        missing = [k for k in ("account_id", "amount") if params.get(k) is None]
+        if missing:
+            action.status = "failed"
+            action.error = f"create_transaction is missing required field(s): {', '.join(missing)}"
+            return action
         tx = Transaction(
             account_id=params["account_id"],
             type=TT(params.get("type", "expense")),

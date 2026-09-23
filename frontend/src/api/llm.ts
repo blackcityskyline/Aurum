@@ -1,5 +1,6 @@
 import { api } from "@/api/client";
 import type {
+  HarnessModelsResponse,
   LlmConfigPatch,
   LlmModelsResponse,
   LlmProvider,
@@ -46,4 +47,10 @@ export function fetchLlmModels(body: {
 /** Cheap connectivity check of the currently configured backend. */
 export function testLlmBackend() {
   return api.post<LlmTestResponse>("/llm/test", {});
+}
+
+/** Model catalogue of the active harness driver (opencode /provider →
+ * connected providers only). Generic rows — no opencode specifics here. */
+export function fetchHarnessModels() {
+  return api.get<HarnessModelsResponse>("/llm/harness/models");
 }
