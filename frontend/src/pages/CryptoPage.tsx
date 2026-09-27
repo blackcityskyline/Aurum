@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -20,6 +20,7 @@ import {
   useUpdateCryptoHolding,
   useUpdateCryptoHoldingRisk,
 } from "@/hooks/useCrypto";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { getIntlLocale } from "@/lib/format";
 import { useTranslation } from "@/lib/i18n";
 import type { CryptoHolding, CryptoPortfolio, CryptoRange, CryptoTransaction, RiskLevel } from "@/types";
@@ -40,14 +41,23 @@ export function CryptoPage() {
   const [hidden, setHidden] = useState(false);
   // null = "All portfolios" tab.
   const [portfolioFilter, setPortfolioFilter] = useState<number | null>(null);
-  const { data: portfolios } = useCryptoPortfolios();
-  const { data, isLoading } = useCryptoHoldings(portfolioFilter);
-  const { data: history, isLoading: isHistoryLoading } = useCryptoHistory(range, portfolioFilter);
-  const { data: performance90d, isLoading: isPerformance90dLoading } = useCrypto90dPerformance(range, portfolioFilter);
+  const { data: portfolios, refetch: refetchPortfolios } = useCryptoPortfolios();
+  const { data, isLoading, refetch: refetchHoldings } = useCryptoHoldings(portfolioFilter);
+  const { data: history, isLoading: isHistoryLoading, refetch: refetchHistory } = useCryptoHistory(range, portfolioFilter);
+  const { data: performance90d, isLoading: isPerformance90dLoading, refetch: refetchPerformance } = useCrypto90dPerformance(range, portfolioFilter);
   const refresh = useRefreshCryptoPrices();
   const deleteHolding = useDeleteCryptoHolding();
   const updateRisk = useUpdateCryptoHoldingRisk();
   const updateHolding = useUpdateCryptoHolding();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => {
+      refetchPortfolios();
+      refetchHoldings();
+      refetchHistory();
+      refetchPerformance();
+    }, [refetchPortfolios, refetchHoldings, refetchHistory, refetchPerformance]),
+  });
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingPortfolio, setEditingPortfolio] = useState<CryptoPortfolio | null>(null);
@@ -110,6 +120,12 @@ export function CryptoPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <CryptoPortfolioTabs
         portfolios={portfolios ?? []}
         activeId={portfolioFilter}
