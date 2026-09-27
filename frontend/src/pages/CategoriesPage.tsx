@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { CategoryFormModal } from "@/components/categories/CategoryFormModal";
 import { CategoryList } from "@/components/categories/CategoryList";
 import { useCategories, useDeleteCategory } from "@/hooks/useCategories";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { translateCategoryName } from "@/lib/categoryLabels";
 import { useTranslation } from "@/lib/i18n";
 import type { Category, CategoryKind } from "@/types";
@@ -19,8 +20,12 @@ function byName(language: string) {
 
 export function CategoriesPage() {
   const { t, language } = useTranslation();
-  const { data: categories, isLoading } = useCategories();
+  const { data: categories, isLoading, refetch } = useCategories();
   const deleteCategory = useDeleteCategory();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => refetch(), [refetch]),
+  });
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -55,6 +60,12 @@ export function CategoriesPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{t("category.expenseSectionTitle")}</CardTitle>
