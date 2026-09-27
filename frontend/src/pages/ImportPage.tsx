@@ -12,9 +12,11 @@ import { DATE_FORMATS, parseAmount, parseCsv, parseDateWithFormat, type DateForm
 import { formatCurrency } from "@/lib/format";
 import { ApiError } from "@/api/client";
 import { useTranslation } from "@/lib/i18n";
+import { importPdfStatement, type PdfTransaction } from "@/api/transactions";
 import type { TransactionInput } from "@/types";
 
 type Step = "upload" | "map" | "preview";
+type FileType = "csv" | "pdf" | null;
 
 const NONE = "";
 
@@ -32,7 +34,7 @@ interface SkippedRow {
   reason: string;
 }
 
-export function CsvImportPage() {
+export function ImportPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: accounts } = useAccounts();
@@ -43,6 +45,7 @@ export function CsvImportPage() {
   const [accountId, setAccountId] = useState("");
   const [step, setStep] = useState<Step>("upload");
   const [fileName, setFileName] = useState("");
+  const [fileType, setFileType] = useState<FileType>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [dataRows, setDataRows] = useState<string[][]>([]);
   const [mapping, setMapping] = useState<Mapping>({ date: "", amount: "", description: "", merchant: "", notes: "", category: "" });
@@ -50,6 +53,7 @@ export function CsvImportPage() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [createdCount, setCreatedCount] = useState<number | null>(null);
+  const [pdfTransactions, setPdfTransactions] = useState<PdfTransaction[] | null>(null);
 
   const categoryLookup = useMemo(() => {
     const map: Record<"income" | "expense", Map<string, number>> = { income: new Map(), expense: new Map() };
@@ -67,6 +71,23 @@ export function CsvImportPage() {
   const { valid, skipped } = useMemo(() => {
     if (step !== "preview") return { valid: [] as TransactionInput[], skipped: [] as SkippedRow[] };
 
+    // PDF import — already parsed
+    if (fileType === "pdf" && pdfTransactions) {
+      const validRows: TransactionInput[] = pdfTransactions.map((tx) => ({
+        account_id: Number(accountId),
+        category_id: null,
+        transfer_account_id: null,
+        type: tx.type,
+        amount: Math.abs(tx.amount).toFixed(2),
+        description: tx.description,
+        merchant: null,
+        notes: null,
+        date: tx.date,
+      }));
+      return { valid: validRows, skipped: [] };
+    }
+
+    // CSV import
     const dateIdx = headers.indexOf(mapping.date);
     const amountIdx = headers.indexOf(mapping.amount);
     const descIdx = headers.indexOf(mapping.description);
@@ -78,7 +99,7 @@ export function CsvImportPage() {
     const skippedRows: SkippedRow[] = [];
 
     dataRows.forEach((cells, index) => {
-      const rowNumber = index + 2; // header is row 1
+      const rowNumber = index + 2;
       const rawDate = cells[dateIdx] ?? "";
       const rawAmount = cells[amountIdx] ?? "";
       const rawDescription = (cells[descIdx] ?? "").trim();
@@ -119,15 +140,44 @@ export function CsvImportPage() {
     });
 
     return { valid: validRows, skipped: skippedRows };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, headers, dataRows, mapping, dateFormat, categoryLookup, accountId, t]);
+  }, [step, headers, dataRows, mapping, dateFormat, categoryLookup, accountId, t, fileType, pdfTransactions]);
 
-  function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
+  function detectFileType(file: File): FileType {
+    if (file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf") return "pdf";
+    if (file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv") return "csv";
+    return null;
+  }
+
+  async function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    setParseError(null);
 
+    const type = detectFileType(file);
+    if (!type) {
+      setParseError(t("transactions.import.errorUnsupportedType"));
+      return;
+    }
+
+    setParseError(null);
+    setFileType(type);
+    setFileName(file.name);
+
+    if (type === "pdf") {
+      // PDF — send to backend for parsing
+      try {
+        const result = await importPdfStatement(file);
+        setPdfTransactions(result.transactions);
+        setStep("preview");
+      } catch (error) {
+        setParseError(
+          error instanceof ApiError ? error.message : t("transactions.import.pdfParseError")
+        );
+      }
+      return;
+    }
+
+    // CSV — parse locally
     const reader = new FileReader();
     reader.onload = () => {
       const text = String(reader.result ?? "");
@@ -137,11 +187,8 @@ export function CsvImportPage() {
         return;
       }
       const [headerRow, ...rest] = rows;
-      setFileName(file.name);
       setHeaders(headerRow);
       setDataRows(rest);
-      // Best-effort auto-mapping by common header names — the user can
-      // still correct any of these on the next screen.
       const guess = (...candidates: string[]) =>
         headerRow.find((h) => candidates.includes(h.trim().toLowerCase())) ?? "";
       setMapping({
@@ -160,8 +207,10 @@ export function CsvImportPage() {
   function startOver() {
     setStep("upload");
     setFileName("");
+    setFileType(null);
     setHeaders([]);
     setDataRows([]);
+    setPdfTransactions(null);
     setCreatedCount(null);
     setImportError(null);
   }
@@ -221,14 +270,20 @@ export function CsvImportPage() {
               <Upload size={16} />
               {t("transactions.import.chooseFile")}
             </Button>
-            <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={handleFileSelected} className="hidden" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFileSelected}
+              className="hidden"
+              accept=".csv,.pdf,text/csv,application/pdf"
+            />
             {!accountId && <p className="text-xs text-text-muted">{t("transactions.import.pickAccountFirst")}</p>}
             {parseError && <p className="text-sm text-danger">{parseError}</p>}
           </CardContent>
         </Card>
       )}
 
-      {step === "map" && (
+      {step === "map" && fileType === "csv" && (
         <Card>
           <CardHeader>
             <CardTitle>{t("transactions.import.mapTitle")}</CardTitle>
