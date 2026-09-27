@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
     llm_temperature: float = 0.7
 
+    # Directory for file uploads (chat attachments, etc.)
+    upload_dir: str = "/tmp/aurum_uploads"
+
     @property
     def database_url(self) -> str:
         return (

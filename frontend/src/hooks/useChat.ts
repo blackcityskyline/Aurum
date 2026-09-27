@@ -82,27 +82,40 @@ export function useChat() {
   // otherwise the user's own bubble only appears after the whole backend
   // turn (LLM round-trips can take seconds).
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  // Last message that failed to send — kept so the user can resend it
+  // without retyping (e.g. after a provider rate-limit error).
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const sessions = useChatSessions();
   const messages = useChatMessages(activeSessionId);
   const sendMutation = useSendChatMessage();
   const deleteMutation = useDeleteChatSession();
 
   const handleSend = useCallback(
-    (message: string) => {
+    (message: string, attachment_ids?: number[]) => {
       setPendingMessage(message);
+      setLastFailedMessage(null);
       sendMutation.mutate(
-        { message, session_id: activeSessionId ?? undefined },
+        { message, session_id: activeSessionId ?? undefined, attachment_ids },
         {
           onSuccess: (data) => {
             setPendingMessage(null);
             setActiveSessionId(data.session_id);
           },
-          onError: () => setPendingMessage(null),
+          onError: () => {
+            setPendingMessage(null);
+            setLastFailedMessage(message);
+          },
         }
       );
     },
     [activeSessionId, sendMutation]
   );
+
+  const handleResend = useCallback(() => {
+    if (lastFailedMessage) {
+      handleSend(lastFailedMessage);
+    }
+  }, [lastFailedMessage, handleSend]);
 
   const handleNewSession = useCallback(() => {
     setActiveSessionId(null);
@@ -133,8 +146,10 @@ export function useChat() {
     isSending: sendMutation.isPending,
     pendingMessage,
     error: sendMutation.error,
+    lastFailedMessage,
     activeSessionId,
     handleSend,
+    handleResend,
     handleNewSession,
     handleSelectSession,
     handleDeleteSession,

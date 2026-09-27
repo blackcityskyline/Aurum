@@ -64,23 +64,39 @@ class OpenAICompatibleProvider(AbstractLLMProvider):
         into LLMProviderError — the chat route maps that to a 502 with a
         readable detail instead of an unhandled 500.
 
-        One short retry on 429 first: free-tier endpoints rate-limit in
-        bursts, so a single pause usually converts a failed turn into a
-        successful one instead of an error the user has to resend."""
+        Exponential backoff on 429: free-tier endpoints rate-limit in
+        bursts, so a few pauses with growing delays usually convert a
+        failed turn into a successful one instead of an error the user
+        has to resend. Honors Retry-After when present, capped so a
+        hostile/absurd value can't hold the request open."""
         url = f"{self.base_url}/chat/completions"
-        try:
-            resp = await client.post(url, json=payload, headers=headers)
-            if resp.status_code == 429:
-                await asyncio.sleep(retry_after_seconds(resp))
+        max_retries = 3
+        base_delay = 1.0
+
+        for attempt in range(max_retries):
+            try:
                 resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            return resp
-        except httpx.HTTPStatusError as e:
-            raise LLMProviderError(
-                describe_upstream_error(e.response, self.base_url)
-            ) from e
-        except httpx.HTTPError as e:
-            raise LLMProviderError(describe_transport_error(e, self.base_url)) from e
+                if resp.status_code == 429 and attempt < max_retries - 1:
+                    delay = retry_after_seconds(resp, default=base_delay * (2 ** attempt))
+                    logger.warning(
+                        "Rate limited (429) on %s, retrying in %.1fs (attempt %d/%d)",
+                        self.base_url, delay, attempt + 1, max_retries,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                resp.raise_for_status()
+                return resp
+            except httpx.HTTPStatusError as e:
+                raise LLMProviderError(
+                    describe_upstream_error(e.response, self.base_url)
+                ) from e
+            except httpx.HTTPError as e:
+                raise LLMProviderError(describe_transport_error(e, self.base_url)) from e
+
+        # Should not reach here, but just in case
+        raise LLMProviderError(
+            f"Max retries ({max_retries}) exceeded for {self.base_url}"
+        )
 
     async def chat(
         self,

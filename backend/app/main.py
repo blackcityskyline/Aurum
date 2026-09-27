@@ -18,6 +18,7 @@ from app.api.routes import (
     insights,
     llm,
     net_worth,
+    pdf_import,
     recurring,
     reports,
     settings as settings_routes,
@@ -94,6 +95,7 @@ app.include_router(tags.router, prefix="/api")
 app.include_router(crypto.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(llm.router, prefix="/api")
+app.include_router(pdf_import.router, prefix="/api")
 
 
 @app.get("/api/health")

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Brain, MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Send, Trash2 } from "lucide-react";
+import { Brain, MessageSquare, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Send, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ModelPicker } from "@/components/chat/ModelPicker";
 import { useChat } from "@/hooks/useChat";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import { useTranslation } from "@/lib/i18n";
-import type { ChatAction, ChatMessage } from "@/types/chat";
+import { uploadAttachment, downloadAttachmentUrl } from "@/api/chat";
+import type { ChatAction, ChatAttachment, ChatMessage } from "@/types/chat";
 
 const ACTION_COLORS: Record<string, string> = {
   executed: "bg-success/15 text-success",
@@ -32,6 +33,12 @@ function ActionBadge({ action }: { action: ChatAction }) {
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** Bouncing-dots "assistant is working" bubble — shown for the whole
@@ -78,6 +85,29 @@ function MessageBubble({
           </details>
         )}
         <p className="whitespace-pre-wrap">{msg.content}</p>
+        {msg.attachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {msg.attachments.map((att) => (
+              <a
+                key={att.id}
+                href={downloadAttachmentUrl(att.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
+                  isUser
+                    ? "bg-white/20 text-white hover:bg-white/30"
+                    : "bg-surface-1 text-text-secondary hover:bg-surface-0"
+                }`}
+              >
+                <Paperclip size={12} />
+                <span className="max-w-[120px] truncate">{att.filename}</span>
+                <span className={isUser ? "text-white/60" : "text-text-muted"}>
+                  ({formatFileSize(att.size)})
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
         {msg.actions.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
             {msg.actions.map((a, i) => (
@@ -107,14 +137,19 @@ export function ChatPage() {
     isSending,
     pendingMessage,
     error,
+    lastFailedMessage,
     activeSessionId,
     handleSend,
+    handleResend,
     handleNewSession,
     handleSelectSession,
     handleDeleteSession,
   } = useChat();
 
   const [input, setInput] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [showReasoning, setShowReasoning] = useLocalStorageState(
     "aurum:chat-show-reasoning",
     false
@@ -127,6 +162,7 @@ export function ChatPage() {
     IS_WIDE_SCREEN
   );
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -135,9 +171,37 @@ export function ChatPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed || isSending) return;
-    handleSend(trimmed);
+    if ((!trimmed && pendingAttachments.length === 0) || isSending) return;
+    handleSend(trimmed, pendingAttachments.map((a) => a.id));
     setInput("");
+    setPendingAttachments([]);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    
+    // Check file size (10 MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError(t("chat.attachmentTooLarge", { size: "10 MB" }));
+      return;
+    }
+    
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const attachment = await uploadAttachment(file);
+      setPendingAttachments((prev) => [...prev, attachment]);
+    } catch (err) {
+      setUploadError(t("chat.attachmentUploadError"));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRemoveAttachment = (id: number) => {
+    setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
   const historyToggleLabel = historyOpen ? t("chat.historyCollapse") : t("chat.historyExpand");
@@ -280,9 +344,46 @@ export function ChatPage() {
             </div>
 
             {error && (
-              <p className="mb-2 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">
-                {error instanceof Error ? error.message : t("chat.sendError")}
-              </p>
+              <div className="mb-2 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">
+                <p>{error instanceof Error ? error.message : t("chat.sendError")}</p>
+                {lastFailedMessage && (
+                  <button
+                    onClick={handleResend}
+                    disabled={isSending}
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-danger/20 px-2 py-1 font-medium text-danger transition-colors hover:bg-danger/30 disabled:opacity-50"
+                  >
+                    <Send size={12} />
+                    {t("chat.resend")}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Pending attachments */}
+            {pendingAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+                {pendingAttachments.map((att) => (
+                  <span
+                    key={att.id}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-xs text-text-secondary"
+                  >
+                    <Paperclip size={12} />
+                    <span className="max-w-[120px] truncate">{att.filename}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachment(att.id)}
+                      className="text-text-muted hover:text-danger"
+                      aria-label={t("chat.removeAttachment")}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {uploadError && (
+              <p className="mt-1 text-xs text-danger">{uploadError}</p>
             )}
 
             {/* Input */}
@@ -295,9 +396,26 @@ export function ChatPage() {
                 disabled={isSending}
                 className="flex-1 rounded-lg border border-border bg-surface-0 px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none"
               />
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileSelect}
+                className="hidden"
+                accept=".pdf,.csv,.json,.txt,.xlsx,.xls,.png,.jpg,.jpeg,.gif,.webp"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isSending || isUploading}
+                title={t("chat.attach")}
+                aria-label={t("chat.attach")}
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-surface-0 px-3 py-2.5 text-text-muted transition-colors hover:bg-surface-2 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Paperclip size={15} />
+              </button>
               <button
                 type="submit"
-                disabled={isSending || !input.trim()}
+                disabled={isSending || (!input.trim() && pendingAttachments.length === 0)}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send size={15} />

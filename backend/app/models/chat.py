@@ -1,7 +1,7 @@
 """Chat sessions and messages for the AI agent interface."""
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -33,3 +33,18 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     session: Mapped["ChatSession"] = relationship(back_populates="messages")
+    attachments: Mapped[list["ChatAttachment"]] = relationship(back_populates="message", cascade="all, delete-orphan")
+
+
+class ChatAttachment(Base):
+    __tablename__ = "chat_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"))
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size: Mapped[int] = mapped_column(Integer)
+    file_path: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    message: Mapped["ChatMessage"] = relationship(back_populates="attachments")

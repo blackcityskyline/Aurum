@@ -155,6 +155,12 @@ export function TransactionsPage() {
               {t("transactions.importButton")}
             </Button>
           </Link>
+          <Link to="/transactions/import-pdf" className="flex-1 sm:flex-none">
+            <Button variant="secondary" className="w-full sm:w-auto">
+              <FileUp size={16} />
+              {t("transactions.importPdfButton")}
+            </Button>
+          </Link>
           <Button onClick={openCreateModal} className="flex-1 sm:w-auto">
             <Plus size={16} />
             {t("transactions.addButton")}

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     message: str
     session_id: int | None = None
+    attachment_ids: list[int] = []
 
 
 class ChatAction(BaseModel):
@@ -17,6 +18,17 @@ class ChatAction(BaseModel):
     error: str | None = None
 
 
+class ChatAttachmentRead(BaseModel):
+    id: int
+    message_id: int
+    filename: str
+    content_type: str
+    size: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ChatMessageRead(BaseModel):
     id: int
     role: str
@@ -25,6 +37,7 @@ class ChatMessageRead(BaseModel):
     # frontend shows it only when the user ticks "show reasoning".
     reasoning: str | None = None
     actions: list[ChatAction] = []
+    attachments: list[ChatAttachmentRead] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}

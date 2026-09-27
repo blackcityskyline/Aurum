@@ -15,6 +15,7 @@ from app.models.category import Category
 from app.models.chat import ChatMessage, ChatSession
 from app.models.transaction import Transaction
 from app.schemas.chat import ChatAction, ChatMessageRead, ChatResponse
+from app.services.agent_skills import SKILLS_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,23 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_transactions",
+            "description": "Analyze spending patterns and categorize transactions. Use this to study the user's transaction history and learn their categorization habits.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date_from": {"type": "string", "description": "YYYY-MM-DD inclusive"},
+                    "date_to": {"type": "string", "description": "YYYY-MM-DD inclusive"},
+                    "account_id": {"type": "integer"},
+                    "category_id": {"type": "integer"},
+                    "limit": {"type": "integer", "description": "Max rows, default 100"},
+                },
+            },
+        },
+    },
 ]
 
 
@@ -181,6 +199,29 @@ Available tools (use them — don't invent JSON by hand when tools are offered):
 - delete_transaction: remove a transaction
 - create_category / create_account: add a category or account
 - list_transactions: read transactions for a period (use this to analyze spending)
+- analyze_transactions: analyze spending patterns and categorize transactions
+
+SKILLS:
+1. Transaction Analysis: When the user asks about spending, budgets, or financial
+   patterns, use analyze_transactions to study their transaction history (last 100
+   transactions by default). Learn from their categorization habits to suggest
+   better categories for future transactions.
+
+2. File Processing: When the user uploads a file (PDF statement, CSV, spreadsheet),
+   analyze it and offer to import the data. For PDF statements, extract transactions
+   and suggest categories based on the user's history.
+
+3. User Support: If the user seems confused or asks for help, explain financial
+   concepts in simple terms. Offer actionable advice based on their actual data.
+
+4. Proactive Suggestions: Notice patterns (e.g., recurring subscriptions, budget
+   overspending) and proactively suggest improvements.
+
+CATEGORY INTELLIGENCE:
+- Study the user's transaction history to understand their categorization patterns
+- When creating transactions, suggest categories based on similar past transactions
+- If a transaction doesn't fit any existing category, propose creating a new one
+- Learn from corrections: if the user changes a category, remember that preference
 
 Keep it simple: the user asks routine things (log a purchase, fix an amount,
 delete a duplicate, compare spending over a period). Confirm what you did in
@@ -201,7 +242,7 @@ class ChatService:
         self.config = config
 
     async def process_message(
-        self, user_message: str, session_id: int | None = None
+        self, user_message: str, session_id: int | None = None, attachment_ids: list[int] | None = None
     ) -> ChatResponse:
         # 1. Find or create session
         if session_id is not None:
@@ -222,12 +263,21 @@ class ChatService:
         self.session.add(user_msg)
         await self.session.flush()
 
+        # 2b. Link attachments to this message
+        if attachment_ids:
+            from app.models.chat import ChatAttachment
+            for att_id in attachment_ids:
+                att = await self.session.get(ChatAttachment, att_id)
+                if att is not None:
+                    att.message_id = user_msg.id
+
         # 3. Build context and call LLM
         history = await self._get_history(chat_session.id)
         financial_ctx = await self._build_financial_context()
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SKILLS_PROMPT},
             {"role": "system", "content": f"Financial context:\n{financial_ctx}"},
             *history,
             {"role": "user", "content": user_message},
@@ -447,6 +497,8 @@ class ChatService:
                 return await self._delete_transaction(action)
             elif action.type == "list_transactions":
                 return await self._list_transactions(action)
+            elif action.type == "analyze_transactions":
+                return await self._analyze_transactions(action)
             elif action.type == "create_category":
                 return await self._create_category(action)
             elif action.type == "create_account":
@@ -556,6 +608,78 @@ class ChatService:
             ],
             ensure_ascii=False,
         )
+        return action
+
+    async def _analyze_transactions(self, action: ChatAction) -> ChatAction:
+        """Analyze spending patterns and categorize transactions.
+        
+        This tool helps the model study the user's transaction history and
+        learn their categorization habits. It returns aggregated data about
+        spending by category, frequent merchants, and monthly trends.
+        """
+        params = action.params
+        stmt = select(Transaction).order_by(Transaction.date.desc())
+        if params.get("date_from"):
+            stmt = stmt.where(Transaction.date >= date.fromisoformat(params["date_from"]))
+        if params.get("date_to"):
+            stmt = stmt.where(Transaction.date <= date.fromisoformat(params["date_to"]))
+        if params.get("account_id"):
+            stmt = stmt.where(Transaction.account_id == params["account_id"])
+        if params.get("category_id"):
+            stmt = stmt.where(Transaction.category_id == params["category_id"])
+        stmt = stmt.limit(int(params.get("limit") or 100))
+
+        rows = (await self.session.execute(stmt)).scalars().all()
+        
+        # Aggregate by category
+        category_spending: dict[int, dict] = {}
+        merchant_counts: dict[str, int] = {}
+        monthly_totals: dict[str, float] = {}
+        
+        for t in rows:
+            # Category aggregation
+            cat_id = t.category_id or 0
+            if cat_id not in category_spending:
+                category_spending[cat_id] = {"count": 0, "total": 0.0}
+            category_spending[cat_id]["count"] += 1
+            category_spending[cat_id]["total"] += float(t.amount)
+            
+            # Merchant/description frequency
+            desc = t.description or "Unknown"
+            merchant_counts[desc] = merchant_counts.get(desc, 0) + 1
+            
+            # Monthly totals
+            month_key = t.date.strftime("%Y-%m")
+            monthly_totals[month_key] = monthly_totals.get(month_key, 0.0) + float(t.amount)
+        
+        # Get category names
+        cat_ids = list(category_spending.keys())
+        cat_names: dict[int, str] = {}
+        if cat_ids:
+            cat_stmt = select(Category).where(Category.id.in_(cat_ids))
+            cats = (await self.session.execute(cat_stmt)).scalars().all()
+            cat_names = {c.id: c.name for c in cats}
+        
+        # Build result
+        result = {
+            "total_transactions": len(rows),
+            "total_spent": sum(float(t.amount) for t in rows if t.type.value == "expense"),
+            "total_earned": sum(float(t.amount) for t in rows if t.type.value == "income"),
+            "by_category": [
+                {
+                    "category_id": cat_id,
+                    "category_name": cat_names.get(cat_id, "Uncategorized"),
+                    "count": data["count"],
+                    "total": round(data["total"], 2),
+                }
+                for cat_id, data in sorted(category_spending.items(), key=lambda x: x[1]["total"], reverse=True)
+            ],
+            "top_merchants": sorted(merchant_counts.items(), key=lambda x: x[1], reverse=True)[:10],
+            "monthly_trends": dict(sorted(monthly_totals.items())),
+        }
+        
+        action.status = "executed"
+        action.result = json.dumps(result, ensure_ascii=False)
         return action
 
     async def _create_category(self, action: ChatAction) -> ChatAction:

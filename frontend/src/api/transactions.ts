@@ -50,3 +50,22 @@ export function updateTransaction(id: number, input: Partial<TransactionInput>) 
 export function deleteTransaction(id: number) {
   return api.delete<void>(`/transactions/${id}`);
 }
+
+export interface PdfTransaction {
+  date: string;
+  description: string;
+  amount: number;
+  type: "income" | "expense";
+}
+
+export interface PdfImportResult {
+  filename: string;
+  transactions: PdfTransaction[];
+  count: number;
+}
+
+export function importPdfStatement(file: File): Promise<PdfImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return api.post<PdfImportResult>("/transactions/import-pdf", formData);
+}

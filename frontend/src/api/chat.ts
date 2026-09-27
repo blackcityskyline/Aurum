@@ -1,5 +1,5 @@
 import { api } from "@/api/client";
-import type { ChatMessage, ChatRequest, ChatResponse, ChatSession } from "@/types/chat";
+import type { ChatAttachment, ChatMessage, ChatRequest, ChatResponse, ChatSession } from "@/types/chat";
 
 export function sendMessage(input: ChatRequest) {
   return api.post<ChatResponse>("/chat", input);
@@ -15,4 +15,14 @@ export function fetchChatMessages(sessionId: number) {
 
 export function deleteChatSession(sessionId: number) {
   return api.delete<void>(`/chat/sessions/${sessionId}`);
+}
+
+export function uploadAttachment(file: File): Promise<ChatAttachment> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return api.post<ChatAttachment>("/chat/attachments/upload", formData);
+}
+
+export function downloadAttachmentUrl(attachmentId: number): string {
+  return `/api/chat/attachments/${attachmentId}/download`;
 }
