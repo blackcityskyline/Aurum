@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 interface UsePullToRefreshOptions {
-  onRefresh: () => void | Promise<void>;
+  onRefresh: () => void | Promise<unknown>;
   threshold?: number;
 }
 

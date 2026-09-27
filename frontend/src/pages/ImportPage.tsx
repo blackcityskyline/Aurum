@@ -697,7 +697,7 @@ export function ImportPage() {
                   <p className="text-sm text-danger">{t("transactions.import.duplicateCheckFailed")}</p>
                 )}
 
-                {duplicateCount > 0 && (
+                {duplicateCount != null && duplicateCount > 0 && (
                   <div className="flex items-start gap-2 rounded-lg border border-border bg-surface-2 p-3 text-xs text-text-muted">
                     <label className="flex items-start gap-2">
                       <input
