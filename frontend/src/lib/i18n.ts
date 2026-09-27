@@ -873,7 +873,7 @@ const en: Record<keyof typeof ru, string> = {
   "transactions.import.presetHint": "Built-in profiles: T-Bank, monobank, PrivatBank — columns and formats are pre-filled. Exports from other banks go through manual column mapping.",
   "transactions.import.presetDetected": "Bank profile: {{bank}}. Columns and formats were pre-filled — review and adjust if needed.",
   "transactions.import.presetNotDetected": "Bank format not recognised — map the columns by hand or pick a bank from the list.",
-  "transactions.import.errorRowFiltered": "operation was not completed (status "{{value}}")",
+  "transactions.import.errorRowFiltered": "operation was not completed (status '{{value}}')",
   "transactions.import.pdfTitle": "Import statement from PDF",
   "transactions.import.pdfUploadTitle": "PDF file",
   "transactions.import.pdfUploadHint": "Upload a bank statement in PDF format — transactions will be recognized automatically.",
