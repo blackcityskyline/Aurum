@@ -1,19 +1,24 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { AccountList } from "@/components/accounts/AccountList";
 import { AccountFormModal } from "@/components/accounts/AccountFormModal";
 import { useAccounts, useDeleteAccount, useUpdateAccount } from "@/hooks/useAccounts";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useTranslation } from "@/lib/i18n";
 import type { Account, AccountWithBalance } from "@/types";
 
 export function AccountsPage() {
   const { t } = useTranslation();
   const [showArchived, setShowArchived] = useState(false);
-  const { data: accounts, isLoading } = useAccounts(showArchived);
+  const { data: accounts, isLoading, refetch } = useAccounts(showArchived);
   const updateAccount = useUpdateAccount();
   const deleteAccount = useDeleteAccount();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => refetch(), [refetch]),
+  });
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
@@ -40,6 +45,12 @@ export function AccountsPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{t("nav.accounts")}</CardTitle>
