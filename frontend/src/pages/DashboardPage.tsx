@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { MonthSelector } from "@/components/layout/MonthSelector";
 import { YearSelector } from "@/components/layout/YearSelector";
 import { StatCard } from "@/components/dashboard/StatCard";
@@ -7,6 +7,7 @@ import { RecentTransactionsCard } from "@/components/dashboard/RecentTransaction
 import { AlertBanner } from "@/components/insights/AlertBanner";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useTransactionYears } from "@/hooks/useTransactions";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { formatCurrency, formatSignedCurrency } from "@/lib/format";
 import { useTranslation } from "@/lib/i18n";
 
@@ -26,13 +27,26 @@ export function DashboardPage() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const { data: years } = useTransactionYears();
+  const { data: years, refetch: refetchYears } = useTransactionYears();
 
-  const { data, isLoading, isError } = useDashboardSummary(year, month);
+  const { data, isLoading, isError, refetch } = useDashboardSummary(year, month);
   const rate = data ? savingsRate(Number(data.real_income), Number(data.net)) : null;
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => {
+      refetch();
+      refetchYears();
+    }, [refetch, refetchYears]),
+  });
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <AlertBanner excludeKeys={["risky_allocation_exceeded"]} />
 
       <div className="flex items-center gap-3">

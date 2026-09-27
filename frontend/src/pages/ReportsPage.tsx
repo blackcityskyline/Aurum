@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Label, Select } from "@/components/ui/Input";
@@ -11,6 +11,7 @@ import { TransactionFormModal } from "@/components/transactions/TransactionFormM
 import { useCategories } from "@/hooks/useCategories";
 import { useCategoryRanking, useCategorySpendingReport } from "@/hooks/useReports";
 import { useDeleteTransaction, useTransactions, useTransactionYears } from "@/hooks/useTransactions";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import type { TransactionSort } from "@/api/transactions";
 import { computeRange, type CustomYearRange, type RangePreset } from "@/lib/dateRange";
 import { useTranslation } from "@/lib/i18n";
@@ -28,8 +29,8 @@ export function ReportsPage() {
     { value: "5y", label: t("reports.range5y") },
     { value: "custom", label: t("reports.rangeCustom") },
   ];
-  const { data: categories } = useCategories();
-  const { data: years } = useTransactionYears();
+  const { data: categories, refetch: refetchCategories } = useCategories();
+  const { data: years, refetch: refetchYears } = useTransactionYears();
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [range, setRange] = useState<RangePreset>("all");
   const [customRange, setCustomRange] = useState<CustomYearRange>({
@@ -49,8 +50,8 @@ export function ReportsPage() {
   }, [categories, categoryId]);
 
   const { startDate, endDate } = computeRange(range, customRange);
-  const { data: ranking, isLoading: isRankingLoading } = useCategoryRanking("expense", startDate, endDate);
-  const { data: report, isLoading: isReportLoading } = useCategorySpendingReport(categoryId, startDate, endDate);
+  const { data: ranking, isLoading: isRankingLoading, refetch: refetchRanking } = useCategoryRanking("expense", startDate, endDate);
+  const { data: report, isLoading: isReportLoading, refetch: refetchReport } = useCategorySpendingReport(categoryId, startDate, endDate);
   const { data: transactions, isLoading: isTransactionsLoading } = useTransactions({
     category_id: categoryId ?? undefined,
     start_date: startDate,
@@ -60,6 +61,15 @@ export function ReportsPage() {
     page_size: PAGE_SIZE,
   });
   const deleteTransaction = useDeleteTransaction();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => {
+      refetchCategories();
+      refetchYears();
+      refetchRanking();
+      refetchReport();
+    }, [refetchCategories, refetchYears, refetchRanking, refetchReport]),
+  });
 
   // Hierarchical within each group (a subcategory right under its own
   // parent, indented) — a bare "Sweets" option next to top-level categories
@@ -87,6 +97,12 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-xs flex-1">
           <Label htmlFor="report-category">{t("reports.categoryLabel")}</Label>

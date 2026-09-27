@@ -1,6 +1,8 @@
+import { useCallback } from "react";
 import { Lightbulb, TrendingUp, TriangleAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useAdvice } from "@/hooks/useAdvice";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { formatCurrency } from "@/lib/format";
 import { useTranslation } from "@/lib/i18n";
 import { translateCategoryName } from "@/lib/categoryLabels";
@@ -47,11 +49,21 @@ function adviceMessage(item: AdviceItem, t: ReturnType<typeof useTranslation>["t
 
 export function AdvicePage() {
   const { t } = useTranslation();
-  const { data, isLoading } = useAdvice();
+  const { data, isLoading, refetch } = useAdvice();
   const items = data?.items ?? [];
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => refetch(), [refetch]),
+  });
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{t("nav.advice")}</CardTitle>

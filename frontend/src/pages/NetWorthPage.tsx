@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +11,7 @@ import { AssetFormModal } from "@/components/networth/AssetFormModal";
 import { AlertBanner } from "@/components/insights/AlertBanner";
 import { useNetWorthSummary } from "@/hooks/useNetWorth";
 import { useAssets, useDeleteAsset } from "@/hooks/useAssets";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useTranslation } from "@/lib/i18n";
 import type { Asset, NetWorthRange } from "@/types";
 
@@ -20,9 +21,16 @@ export function NetWorthPage() {
   // briefly outpaces recorded income, which reads as decline even though
   // the long-run trend is up — 5y is long enough to make that trend visible.
   const [range, setRange] = useState<NetWorthRange>("5y");
-  const { data: summary, isLoading: isSummaryLoading } = useNetWorthSummary(range);
-  const { data: assets, isLoading: isAssetsLoading } = useAssets();
+  const { data: summary, isLoading: isSummaryLoading, refetch: refetchSummary } = useNetWorthSummary(range);
+  const { data: assets, isLoading: isAssetsLoading, refetch: refetchAssets } = useAssets();
   const deleteAsset = useDeleteAsset();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => {
+      refetchSummary();
+      refetchAssets();
+    }, [refetchSummary, refetchAssets]),
+  });
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
@@ -45,6 +53,12 @@ export function NetWorthPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <AlertBanner />
 
       <NetWorthChart summary={summary} isLoading={isSummaryLoading} range={range} onRangeChange={setRange} />

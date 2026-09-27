@@ -1,18 +1,23 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { RecurringList } from "@/components/recurring/RecurringList";
 import { RecurringFormModal } from "@/components/recurring/RecurringFormModal";
 import { useDeleteRecurring, usePostRecurring, useRecurring } from "@/hooks/useRecurring";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useTranslation } from "@/lib/i18n";
 import type { RecurringTransaction } from "@/types";
 
 export function RecurringPage() {
   const { t } = useTranslation();
-  const { data: items, isLoading } = useRecurring();
+  const { data: items, isLoading, refetch } = useRecurring();
   const deleteRecurring = useDeleteRecurring();
   const postRecurring = usePostRecurring();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => refetch(), [refetch]),
+  });
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<RecurringTransaction | null>(null);
@@ -39,6 +44,12 @@ export function RecurringPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{t("nav.recurring")}</CardTitle>

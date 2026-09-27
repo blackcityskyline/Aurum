@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
+import { MobileNav } from "@/components/layout/MobileNav";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import { useAppSettings } from "@/hooks/useSettings";
 import { setCurrency } from "@/lib/i18n";
@@ -49,7 +50,7 @@ export default function App() {
             fixed max-w here would leave that freed space as dead centered
             gutter instead of handing it to the page. Padding alone keeps
             content off the sidebar/viewport edges. */}
-        <main className="w-full px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+        <main className="w-full px-4 py-5 pb-20 sm:px-6 sm:py-6 md:pb-6 lg:px-8">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/net-worth" element={<NetWorthPage />} />
@@ -70,6 +71,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <MobileNav />
     </div>
   );
 }

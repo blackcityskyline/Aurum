@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -7,6 +7,7 @@ import { Label, Select } from "@/components/ui/Input";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { useBulkCreateTransactions, useTransactionsForDuplicateCheck } from "@/hooks/useTransactions";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { translateCategoryName } from "@/lib/categoryLabels";
 import {
   BANK_PRESETS,
@@ -104,10 +105,17 @@ function resolveDefaults(headers: string[], preset: BankPreset | null): { mappin
 export function ImportPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data: accounts } = useAccounts();
-  const { data: categories } = useCategories();
+  const { data: accounts, refetch: refetchAccounts } = useAccounts();
+  const { data: categories, refetch: refetchCategories } = useCategories();
   const bulkCreate = useBulkCreateTransactions();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => {
+      refetchAccounts();
+      refetchCategories();
+    }, [refetchAccounts, refetchCategories]),
+  });
 
   const [accountId, setAccountId] = useState("");
   const [step, setStep] = useState<Step>("upload");
@@ -433,6 +441,12 @@ export function ImportPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <Link
           to="/transactions"
