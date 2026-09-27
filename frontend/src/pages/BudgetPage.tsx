@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -9,6 +9,7 @@ import { BudgetList } from "@/components/budget/BudgetList";
 import { BudgetFormModal } from "@/components/budget/BudgetFormModal";
 import { useBudgets, useBudgetStatus, useDeleteBudget } from "@/hooks/useBudgets";
 import { useTransactionYears } from "@/hooks/useTransactions";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useTranslation } from "@/lib/i18n";
 import { translateCategoryName } from "@/lib/categoryLabels";
 import type { Budget, BudgetStatus } from "@/types";
@@ -18,11 +19,19 @@ export function BudgetPage() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const { data: years } = useTransactionYears();
+  const { data: years, refetch: refetchYears } = useTransactionYears();
 
-  const { data: budgets } = useBudgets();
-  const { data: status, isLoading } = useBudgetStatus(year, month);
+  const { data: budgets, refetch: refetchBudgets } = useBudgets();
+  const { data: status, isLoading, refetch } = useBudgetStatus(year, month);
   const deleteBudget = useDeleteBudget();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => {
+      refetch();
+      refetchBudgets();
+      refetchYears();
+    }, [refetch, refetchBudgets, refetchYears]),
+  });
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
@@ -52,6 +61,12 @@ export function BudgetPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <AlertBanner />
 
       <div className="flex items-center gap-3">
