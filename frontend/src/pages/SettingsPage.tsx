@@ -1,4 +1,5 @@
 import { AlertThresholdsCard } from "@/components/settings/AlertThresholdsCard";
+import { AiSettingsCard } from "@/components/settings/AiSettingsCard";
 import { BackupCard } from "@/components/settings/BackupCard";
 import { CurrencyCard } from "@/components/settings/CurrencyCard";
 import { PreferencesCard } from "@/components/settings/PreferencesCard";
@@ -15,6 +16,7 @@ export function SettingsPage() {
     <div className="space-y-5">
       <PreferencesCard />
       <CurrencyCard />
+      <AiSettingsCard />
       <AlertThresholdsCard />
       <BackupCard />
       {health?.version && (

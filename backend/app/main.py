@@ -11,11 +11,14 @@ from app.api.routes import (
     budgets,
     cash_flow,
     categories,
+    chat,
     crypto,
     dashboard,
     goals,
     insights,
+    llm,
     net_worth,
+    pdf_import,
     recurring,
     reports,
     settings as settings_routes,
@@ -23,7 +26,12 @@ from app.api.routes import (
     transactions,
 )
 from app.core.config import APP_VERSION, get_settings
-from app.db.seed import seed_default_account, seed_default_app_settings, seed_default_categories
+from app.db.seed import (
+    seed_default_account,
+    seed_default_app_settings,
+    seed_default_categories,
+    seed_default_llm_settings,
+)
 from app.db.session import AsyncSessionLocal
 
 settings = get_settings()
@@ -35,6 +43,7 @@ async def lifespan(app: FastAPI):
         await seed_default_categories(session)
         await seed_default_account(session)
         await seed_default_app_settings(session)
+        await seed_default_llm_settings(session)
     yield
 
 
@@ -84,6 +93,9 @@ app.include_router(recurring.router, prefix="/api")
 app.include_router(cash_flow.router, prefix="/api")
 app.include_router(tags.router, prefix="/api")
 app.include_router(crypto.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
+app.include_router(llm.router, prefix="/api")
+app.include_router(pdf_import.router, prefix="/api")
 
 
 @app.get("/api/health")

@@ -17,6 +17,8 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       AURUM_POSTGRES_USER: ${AURUM_POSTGRES_USER:-aurum}
       AURUM_POSTGRES_PASSWORD: ${AURUM_POSTGRES_PASSWORD:-aurum}
@@ -25,9 +27,20 @@ services:
       AURUM_POSTGRES_PORT: 5432
       AURUM_CORS_ORIGINS: ${AURUM_CORS_ORIGINS:-}
       AURUM_DEFAULT_CURRENCY: ${AURUM_DEFAULT_CURRENCY:-USD}
-      # Free CoinGecko Demo key (coingecko.com/en/api/pricing) — the Crypto
-      # tab's price sync 400s with a clear message until this is set.
       AURUM_COINGECKO_API_KEY: ${AURUM_COINGECKO_API_KEY:-}
+      # Chat / AI agent
+      # provider: stub | opencode | openai_compatible
+      AURUM_LLM_PROVIDER: ${AURUM_LLM_PROVIDER:-opencode}
+      # opencode harness (provider=opencode): address of opencode serve
+      # (via socat on Docker gateway, see socat-opencode.service)
+      AURUM_OPENCODE_URL: ${AURUM_OPENCODE_URL:-http://host.docker.internal:4096}
+      # openai_compatible (provider=openai_compatible): any OpenAI-compatible API
+      # e.g. OpenRouter: AURUM_LLM_BASE_URL=https://openrouter.ai/api/v1
+      AURUM_LLM_BASE_URL: ${AURUM_LLM_BASE_URL:-}
+      AURUM_LLM_API_KEY: ${AURUM_LLM_API_KEY:-}
+      AURUM_LLM_MODEL: ${AURUM_LLM_MODEL:-}
+      AURUM_LLM_MAX_TOKENS: ${AURUM_LLM_MAX_TOKENS:-2048}
+      AURUM_LLM_TEMPERATURE: ${AURUM_LLM_TEMPERATURE:-0.7}
     depends_on:
       db:
         condition: service_healthy

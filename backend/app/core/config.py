@@ -35,6 +35,24 @@ class Settings(BaseSettings):
     # rather than silently hitting CoinGecko's much stingier keyless tier.
     coingecko_api_key: str = ""
 
+    # Chat / AI agent
+    # Providers:
+    #   stub             — echo, no LLM
+    #   opencode         — headless opencode serve harness (recommended)
+    #   openai_compatible — any OpenAI-compatible API (OpenRouter, OpenAI,
+    #                        Groq, Ollama, vLLM, ...)
+    llm_provider: str = "opencode"
+    opencode_url: str = "http://127.0.0.1:4096"
+    # openai_compatible settings (ignored when llm_provider != openai_compatible)
+    llm_base_url: str = ""      # e.g. https://openrouter.ai/api/v1
+    llm_api_key: str = ""
+    llm_model: str = ""         # e.g. openrouter/auto, meta-llama/llama-3.1-8b-instruct:free
+    llm_max_tokens: int = 2048
+    llm_temperature: float = 0.7
+
+    # Directory for file uploads (chat attachments, etc.)
+    upload_dir: str = "/tmp/aurum_uploads"
+
     @property
     def database_url(self) -> str:
         return (

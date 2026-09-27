@@ -93,6 +93,13 @@
   --color-success: var(--success);
   --color-danger: var(--danger);
 
+  /* UI accents that the chat/settings cards speak in (`bg-primary`,
+     `text-warning`, …). Aliased to the chart series so the accent follows
+     the same light/dark values as everything else in the palette. */
+  --color-primary: var(--series-1);
+  --color-warning: var(--series-2);
+  --color-info: var(--series-1);
+
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
   --color-series-3: var(--series-3);
@@ -111,6 +118,63 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans);
 }
+
+/* Chat animations — message entrance, thinking dots. Kept tiny and
+ * transform/opacity-only so they don't jank scrolling. */
+@keyframes chat-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-message-in {
+  animation: chat-message-in 0.18s ease-out both;
+}
+
+@keyframes chat-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+.chat-dot {
+  animation: chat-dot 1.2s infinite ease-in-out;
+}
+
+.chat-dot-2 {
+  animation-delay: 0.15s;
+}
+
+.chat-dot-3 {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.chat-pulse {
+  animation: chat-pulse 1.6s infinite ease-in-out;
+}
+
 
 * {
   border-color: var(--color-border);

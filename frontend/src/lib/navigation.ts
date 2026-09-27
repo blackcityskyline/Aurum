@@ -7,6 +7,7 @@ import {
   Layers,
   Lightbulb,
   LayoutDashboard,
+  MessageSquare,
   PieChart,
   Repeat,
   Settings,
@@ -39,5 +40,6 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.recurring", to: "/recurring", icon: Repeat },
   { labelKey: "nav.goals", to: "/goals", icon: Flag },
   { labelKey: "nav.advice", to: "/advice", icon: Lightbulb },
+  { labelKey: "nav.chat", to: "/chat", icon: MessageSquare },
   { labelKey: "nav.settings", to: "/settings", icon: Settings },
 ];

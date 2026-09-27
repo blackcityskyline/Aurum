@@ -12,11 +12,15 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const authHeader = getAuthHeader();
+  const headers: Record<string, string> = {
+    ...(authHeader ? { Authorization: authHeader } : {}),
+  };
+  // Don't set Content-Type for FormData — the browser sets it with the boundary
+  if (!(init?.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(authHeader ? { Authorization: authHeader } : {}),
-    },
+    headers,
     ...init,
   });
 

@@ -10,9 +10,11 @@ import { AdvicePage } from "@/pages/AdvicePage";
 import { BudgetPage } from "@/pages/BudgetPage";
 import { CashFlowPage } from "@/pages/CashFlowPage";
 import { CategoriesPage } from "@/pages/CategoriesPage";
+import { ChatPage } from "@/pages/ChatPage";
 import { CryptoPage } from "@/pages/CryptoPage";
 import { CsvImportPage } from "@/pages/CsvImportPage";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { PdfImportPage } from "@/pages/PdfImportPage";
 import { GoalsPage } from "@/pages/GoalsPage";
 import { NetWorthPage } from "@/pages/NetWorthPage";
 import { RecurringPage } from "@/pages/RecurringPage";
@@ -59,9 +61,11 @@ export default function App() {
             <Route path="/cash-flow" element={<CashFlowPage />} />
             <Route path="/transactions" element={<TransactionsPage />} />
             <Route path="/transactions/import" element={<CsvImportPage />} />
+            <Route path="/transactions/import-pdf" element={<PdfImportPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/budget" element={<BudgetPage />} />
             <Route path="/advice" element={<AdvicePage />} />
+            <Route path="/chat" element={<ChatPage />} />
             <Route path="/goals" element={<GoalsPage />} />
             <Route path="/recurring" element={<RecurringPage />} />
             <Route path="/settings" element={<SettingsPage />} />
