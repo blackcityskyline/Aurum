@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { FileUp, Plus, Search, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -11,6 +11,7 @@ import { TransactionFormModal } from "@/components/transactions/TransactionFormM
 import { useTransactions, useDeleteTransaction, useTransactionYears } from "@/hooks/useTransactions";
 import { useCategories } from "@/hooks/useCategories";
 import { useTags } from "@/hooks/useTags";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import type { TransactionSort } from "@/api/transactions";
 import { useTranslation } from "@/lib/i18n";
 import { buildHierarchicalCategories, translateCategoryName } from "@/lib/categoryLabels";
@@ -68,7 +69,7 @@ export function TransactionsPage() {
   const { data: categories } = useCategories();
   const { data: tags } = useTags();
   const { data: years } = useTransactionYears();
-  const { data, isLoading, isError } = useTransactions({
+  const { data, isLoading, isError, refetch } = useTransactions({
     // A search looks for a purchase from an unknown month, so it must span
     // every period instead of being boxed into the currently selected one.
     year: isSearching ? undefined : year,
@@ -82,6 +83,10 @@ export function TransactionsPage() {
     page_size: PAGE_SIZE,
   });
   const deleteTransaction = useDeleteTransaction();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => refetch(), [refetch]),
+  });
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
   // Grouped by kind and hierarchical within each group (a subcategory right
@@ -126,6 +131,12 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <div className={`min-w-0 flex-1 ${isSearching ? "pointer-events-none opacity-50" : ""}`}>

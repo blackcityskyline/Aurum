@@ -30,6 +30,8 @@ const ru = {
   "topbar.openMenu": "Открыть меню",
 
   "common.loading": "Загрузка…",
+  "common.pullToRefresh": "Потяните для обновления",
+  "common.releaseToRefresh": "Отпустите для обновления",
   "common.expand": "Развернуть",
   "common.collapse": "Свернуть",
   "common.back": "Назад",
@@ -627,6 +629,8 @@ const en: Record<keyof typeof ru, string> = {
   "topbar.openMenu": "Open menu",
 
   "common.loading": "Loading…",
+  "common.pullToRefresh": "Pull to refresh",
+  "common.releaseToRefresh": "Release to refresh",
   "common.expand": "Expand",
   "common.collapse": "Collapse",
   "common.back": "Back",
