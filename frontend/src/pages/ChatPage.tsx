@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Brain, MessageSquare, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Send, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ModelPicker } from "@/components/chat/ModelPicker";
 import { useChat } from "@/hooks/useChat";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useTranslation } from "@/lib/i18n";
 import { uploadAttachment, downloadAttachmentUrl } from "@/api/chat";
 import type { ChatAction, ChatAttachment, ChatMessage } from "@/types/chat";
@@ -154,6 +155,12 @@ export function ChatPage() {
     "aurum:chat-show-reasoning",
     false
   );
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => {
+      // Chat page doesn't have a global refetch — sessions/messages are managed by useChat
+    }, []),
+  });
   // First visit opens the column on desktop (where it fits next to the
   // chat) and keeps it hidden on mobile (where it can only appear as an
   // overlay covering the conversation); the stored choice wins afterwards.
@@ -208,6 +215,12 @@ export function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-8rem)]">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <Card className="relative flex min-w-0 flex-1 overflow-hidden">
         {/* Mobile: the open column floats over the conversation, so it needs
             something to tap to close it again. Desktop has the header toggle. */}
