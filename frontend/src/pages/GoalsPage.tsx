@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -6,13 +6,18 @@ import { GoalList } from "@/components/goals/GoalList";
 import { GoalFormModal } from "@/components/goals/GoalFormModal";
 import { GoalContributionModal } from "@/components/goals/GoalContributionModal";
 import { useDeleteGoal, useGoals } from "@/hooks/useGoals";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { useTranslation } from "@/lib/i18n";
 import type { Goal } from "@/types";
 
 export function GoalsPage() {
   const { t } = useTranslation();
-  const { data: goals, isLoading } = useGoals();
+  const { data: goals, isLoading, refetch } = useGoals();
   const deleteGoal = useDeleteGoal();
+
+  const { isRefreshing, pullDistance } = usePullToRefresh({
+    onRefresh: useCallback(() => refetch(), [refetch]),
+  });
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
@@ -42,6 +47,12 @@ export function GoalsPage() {
 
   return (
     <div className="space-y-5">
+      {/* Pull-to-refresh indicator (mobile) */}
+      {pullDistance > 0 && (
+        <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-full bg-surface-2 px-4 py-2 text-xs text-text-secondary shadow-lg">
+          {isRefreshing ? t("common.loading") : pullDistance >= 80 ? t("common.releaseToRefresh") : t("common.pullToRefresh")}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>{t("nav.goals")}</CardTitle>
