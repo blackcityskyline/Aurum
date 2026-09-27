@@ -116,9 +116,13 @@ string.
 
 ### `GET /api/health`
 
-No auth required. Returns `{"status": "ok", "version": "1.1.0"}` — `version` is the running app's
-version, the same value shown in the UI under Settings. Use this to check the backend is up before
-hitting anything else.
+No auth required. Returns `{"status": "ok"}`. Use this to check the backend is up before hitting
+anything else.
+
+This response deliberately carries nothing else. It used to include the running app version, but
+this is the one endpoint served without authentication — handing the exact release to anyone who
+can reach the instance tells them which known issues it still has. The version now comes back as
+`app_version` from `GET /settings`, which sits behind auth like everything else.
 
 ## Accounts
 
@@ -364,6 +368,16 @@ Used by the CSV import wizard, but callable directly for any bulk load (e.g. syn
 export tool). All rows are validated **before** any is inserted — one bad row fails the whole
 request with no partial import.
 
+The wizard itself (`/transactions/import`) is bank-agnostic: it auto-detects delimiter and
+encoding and lets you map columns by hand. On top of that it ships **bank profiles** that pre-fill
+the mapping and formats when the header row matches a known export (or when you pick the bank
+explicitly): **T-Bank** (semicolon CSV, `Сумма платежа`, rows with `Статус ≠ OK` skipped),
+**monobank** (Ukrainian-language CSV, `Сума в валюті картки (…)`) and **PrivatBank**
+(`Сума в валюті картки`, `Опис операції`). Profiles live in `frontend/src/lib/bankPresets.ts` —
+adding a bank is one declarative entry (header matchers, date/amount format, optional row filter).
+Banks that only export PDF/XLSX (Sber, Kaspi, Halyk, maib…) are imported via a third-party
+PDF→CSV converter and the manual mapping.
+
 ```json
 { "items": [ /* 1–5000 TransactionCreate objects */ ] }
 ```
@@ -581,6 +595,7 @@ of the whole request failing.
 | `GET` | `/crypto/holdings` | List holdings with live price, 1h/24h/7d % change, computed quantity/avg buy price/P&L. Also runs the lazy once-a-day auto-refresh. |
 | `POST` | `/crypto/refresh` | Force a price refresh right now, bypassing the 24h window. |
 | `POST` | `/crypto/holdings` | Add a new holding — its first buy transaction, inline. Fetches today's price immediately so it isn't `null` until the next sync. |
+| `PATCH` | `/crypto/holdings/{asset_id}` | Update holding-only metadata (currently just `network`) — quantity/price/date go through the transaction endpoints below instead, and `risk_level` through `PATCH /assets/{asset_id}` (see [Assets & Net Worth](#assets--net-worth)). |
 | `POST` | `/crypto/holdings/{asset_id}/transactions` | Buy more of, or sell some of, a coin already tracked. Never calls CoinGecko — value is recomputed from the last cached price. `400` if a sell would exceed what's currently held. |
 | `GET` | `/crypto/holdings/{asset_id}/transactions` | Full buy/sell history for one holding, newest first. |
 | `PATCH` | `/crypto/transactions/{transaction_id}` | Edit an existing transaction (partial — send only the fields you're changing). Never calls CoinGecko. `400` if changing a sell's quantity would exceed what the rest of the log leaves held. |
@@ -599,14 +614,28 @@ of the whole request failing.
   "quantity": "0.05",
   "price_per_unit": "55000",
   "date": "2026-08-01",
-  "note": null
+  "note": null,
+  "risk_level": "high",
+  "network": null
 }
 ```
 
 `coingecko_id` is CoinGecko's own stable id (not the ticker — tickers collide across unrelated
 coins) — get it from `/crypto/search` rather than guessing. `quantity`/`price_per_unit` support up to
 18 decimal places (wei-level token amounts). `price_per_unit` is what you actually paid, in the app's
-display currency — it's stored as-is, never re-derived from market data later.
+display currency — it's stored as-is, never re-derived from market data later. `risk_level` is
+optional, defaults to `high`. `network` is optional free text (e.g. `"Ethereum"`, `"Tron"`) — not
+validated against a fixed list, since the same coin can be issued on chains CoinGecko doesn't
+distinguish by `coingecko_id` alone (a stablecoin held across several networks carries different
+bridge/counterparty risk per chain, which `risk_level` alone can't capture).
+
+**Update holding metadata** (`PATCH /crypto/holdings/{asset_id}`):
+
+```json
+{ "network": "Arbitrum" }
+```
+
+Partial like every other `PATCH` — omit `network` to leave it unchanged, send `null` to clear it.
 
 **Add a transaction** (`POST /crypto/holdings/{asset_id}/transactions`):
 
@@ -630,6 +659,8 @@ display currency — it's stored as-is, never re-derived from market data later.
       "symbol": "BTC",
       "name": "Bitcoin",
       "thumb_url": "https://...",
+      "risk_level": "high",
+      "network": null,
       "quantity": "0.05",
       "avg_buy_price": "55000.00",
       "current_price": "61000.00",
@@ -746,10 +777,13 @@ Single row, created automatically on first run — there's nothing to create, on
   "net_worth_decline_threshold_months": 2,
   "risky_allocation_threshold_percent": 20,
   "idle_cash_threshold_amount": "1000.00",
-  "idle_cash_threshold_days": 60
+  "idle_cash_threshold_days": 60,
+  "app_version": "1.1.8"
 }
 ```
 
+- `app_version`: read-only, ignored on `PATCH` — the running app's release, shown in the UI under
+  Settings. It lives here rather than on the unauthenticated `/health`.
 - `currency`: 3-letter uppercase code — display-only, no conversion.
 - `negative_cash_flow_threshold_months` / `net_worth_decline_threshold_months`: consecutive months
   before the corresponding alert fires (`1`–`24`).

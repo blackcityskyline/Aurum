@@ -3,6 +3,7 @@ import {
   bulkCreateTransactions,
   createTransaction,
   deleteTransaction,
+  fetchAllTransactionsInRange,
   fetchTransactions,
   fetchTransactionYears,
   updateTransaction,
@@ -14,6 +15,11 @@ function useInvalidateAfterTransactionChange() {
   const queryClient = useQueryClient();
   return () => {
     queryClient.invalidateQueries({ queryKey: ["transactions"] });
+    // Without this, a second CSV import of the same date range within
+    // staleTime (see main.tsx) would check for duplicates against a cached
+    // list from *before* the first import finished — and find none, which
+    // is exactly the case the duplicate check exists to catch.
+    queryClient.invalidateQueries({ queryKey: ["transactions-duplicate-check"] });
     queryClient.invalidateQueries({ queryKey: ["transaction-years"] });
     queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
     queryClient.invalidateQueries({ queryKey: ["net-worth-summary"] });
@@ -30,6 +36,21 @@ export function useTransactions(filters: TransactionFilters) {
   return useQuery({
     queryKey: ["transactions", filters],
     queryFn: () => fetchTransactions(filters),
+  });
+}
+
+/** CSV import's duplicate check (see pages/CsvImportPage.tsx) — every
+ * existing transaction for one account within the imported date range, so
+ * re-importing an overlapping bank export can be told apart from new rows. */
+export function useTransactionsForDuplicateCheck(
+  accountId: number | null,
+  startDate: string | null,
+  endDate: string | null
+) {
+  return useQuery({
+    queryKey: ["transactions-duplicate-check", accountId, startDate, endDate],
+    queryFn: () => fetchAllTransactionsInRange({ account_id: accountId!, start_date: startDate!, end_date: endDate! }),
+    enabled: accountId !== null && startDate !== null && endDate !== null,
   });
 }
 

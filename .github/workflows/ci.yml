@@ -8,6 +8,12 @@ on:
   push:
     branches: [main]
 
+# Least privilege for GITHUB_TOKEN: these jobs only ever read the checkout.
+# Without this the token inherits the repository default, which can include
+# write access — handed to every third-party action in the run.
+permissions:
+  contents: read
+
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
@@ -38,8 +44,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -53,8 +59,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -64,3 +70,8 @@ jobs:
       # and a type error a PR might introduce, same as `npm run build`
       # locally before shipping a change.
       - run: npm run build
+      # Vitest over the pure-logic modules (lib/format.ts, the Crypto tab's
+      # allocation math) — kept in the same job rather than a new one so a
+      # renamed job doesn't silently stop matching branch protection's
+      # required status checks.
+      - run: npm run test

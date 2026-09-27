@@ -58,7 +58,7 @@ Aurum treats your financial life as a **system**, not a spreadsheet.
 ## 🧩 Core Features
 
 ### 💰 Cash Flow & Transactions
-Log income, expenses, and transfers across as many accounts as you want, organized into categories (with one level of subcategories) plus free-form tags, and searchable. One purchase spanning multiple subcategories of the same parent (a grocery receipt part "Sweets", part "Alcohol") can be recorded as a single split transaction instead of several — every report and chart still counts each share under its own category. Already have history elsewhere? Import a bank's CSV export in a guided 3-step wizard instead of typing every line by hand. A dedicated Cash Flow view charts income vs. expense month by month.
+Log income, expenses, and transfers across as many accounts as you want, organized into categories (with one level of subcategories) plus free-form tags, and searchable. One purchase spanning multiple subcategories of the same parent (a grocery receipt part "Sweets", part "Alcohol") can be recorded as a single split transaction instead of several — every report and chart still counts each share under its own category. Already have history elsewhere? Import a bank's CSV export in a guided 3-step wizard instead of typing every line by hand — with built-in profiles for T-Bank, monobank and PrivatBank exports (columns, date/amount formats and declined-payment rows handled automatically), and manual column mapping for everything else. A dedicated Cash Flow view charts income vs. expense month by month.
 
 ### 📈 Net Worth Engine
 A live net worth timeline (30 days to all-time) aggregating cash and every manually tracked asset — investments, crypto, real estate, vehicles, precious metals — into one number, with a full breakdown by asset class, by how each asset behaves (income / neutral / drain), and by risk level.
@@ -173,9 +173,35 @@ or open `/api/docs` on your running instance for interactive Swagger docs.
 
 **Aurum has no built-in login system.** It's built for one person to self-host one private instance of their own financial data — not as a multi-tenant service with per-user accounts. That's a deliberate trade-off, not an oversight, but it means:
 
-- If you leave `AURUM_BASIC_AUTH_USER` / `AURUM_BASIC_AUTH_PASSWORD` unset in `.env`, **anyone who can reach the container can read, edit, and delete all of it — no password prompt at all.** This is fine if Aurum is only reachable from `localhost` or your own private network.
+- If you leave `AURUM_BASIC_AUTH_USER` / `AURUM_BASIC_AUTH_PASSWORD` unset in `.env`, **anyone who can reach the container can read, edit, and delete all of it — no password prompt at all.** The app itself now says so on first load, with a warning you have to dismiss. This is fine if Aurum is only reachable from `localhost`.
 - Set both variables before exposing your instance beyond your own machine (a VPS, a subdomain, a Tailscale/VPN endpoint someone else might share). This turns on an HTTP Basic Auth prompt in front of the entire app, UI and API alike.
-- For anything beyond that — a reverse proxy with TLS (Caddy, Traefik, nginx + Let's Encrypt) is on you; Aurum doesn't terminate HTTPS itself.
+
+### Two settings that decide who can reach you
+
+Both default to "this machine only", so opening Aurum up is a deliberate act rather than something that happens by accident:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `AURUM_BIND_ADDRESS` | `127.0.0.1` | Which host interface the port is published on. The default means nothing else on your network can connect, even on the same Wi-Fi. Set `0.0.0.0` to open it. |
+| `AURUM_ALLOWED_HOSTS` | `localhost 127.0.0.1` | Hostnames Aurum answers to; anything else gets a `421`. This blocks DNS rebinding, where a site you're browsing points its own domain at `127.0.0.1` and reads your instance through your own browser. |
+
+If you open the bind address, add whatever you type in the address bar to `AURUM_ALLOWED_HOSTS` too — the LAN IP, your domain, a `.local` name. Forgetting the second one is the usual cause of a `421` on an otherwise working setup.
+
+### Serving it over HTTPS
+
+Aurum speaks plain HTTP by design — certificates belong to a dedicated terminator, not to the app's own nginx. Basic Auth sends your password on **every** request, so without TLS anyone who can see the traffic has it.
+
+A ready-to-use Caddy setup ships with the repo (`docker-compose.tls.yml` + `Caddyfile`). It gets a Let's Encrypt certificate on first start and renews it by itself:
+
+```bash
+# in .env — a real domain pointing at this host
+AURUM_DOMAIN=aurum.example.com
+AURUM_ALLOWED_HOSTS=aurum.example.com
+
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+```
+
+Caddy then owns ports 80 and 443 (80 stays open for the ACME challenge and the HTTPS redirect), the `web` container stops publishing a port of its own, and HSTS is added at the proxy — deliberately there and not in `nginx.conf`, since promising browsers "never use plain HTTP for this host again" is only safe once TLS is actually in front.
 
 If you find a security issue, please open a private report via GitHub's Security tab rather than a public issue.
 
