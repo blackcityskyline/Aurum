@@ -225,7 +225,7 @@ const ru = {
   "netWorth.form.saveError": "Не удалось сохранить актив. Проверьте данные и попробуйте снова.",
 
   "transactions.addButton": "Добавить",
-  "transactions.importButton": "Импорт CSV",
+  "transactions.importButton": "Импорт",
   "transactions.importPdfButton": "Импорт PDF",
   "transactions.import.title": "Импорт транзакций из CSV",
   "transactions.import.accountLabel": "Счёт для импорта",

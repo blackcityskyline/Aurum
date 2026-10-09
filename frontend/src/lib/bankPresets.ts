@@ -114,6 +114,19 @@ export const BANK_PRESETS: readonly BankPreset[] = [
     dateFormat: "DD.MM.YYYY",
     amountFormat: "auto",
   },
+  {
+    id: "alfabank",
+    label: "Альфа-Банк",
+    detect: [["дата"], ["описание"], ["сумма"]],
+    mapping: {
+      date: ["дата"],
+      amount: ["сумма"],
+      description: ["описание"],
+      category: ["категория"],
+    },
+    dateFormat: "DD.MM.YYYY",
+    amountFormat: "auto",
+  },
 ];
 
 export function findPreset(id: string): BankPreset | null {

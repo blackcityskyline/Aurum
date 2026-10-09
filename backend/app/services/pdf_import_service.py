@@ -40,12 +40,12 @@ def parse_pdf_statement(pdf_bytes: bytes) -> list[dict[str, Any]]:
                         if tx:
                             transactions.append(tx)
                 
-                # If no tables found, try text extraction
-                if not tables:
-                    text = page.extract_text()
-                    if text:
-                        text_transactions = _parse_text_block(text)
-                        transactions.extend(text_transactions)
+                # Always try text extraction — tables may exist but contain
+                # no recognizable transactions (scanned PDFs, unusual layouts)
+                text = page.extract_text()
+                if text:
+                    text_transactions = _parse_text_block(text)
+                    transactions.extend(text_transactions)
     except Exception as e:
         raise PdfImportError(f"Failed to parse PDF: {e}") from e
     
@@ -113,6 +113,8 @@ def _parse_text_block(text: str) -> list[dict[str, Any]]:
         # "01.01.2024 Покупка в магазине -1000.00"
         # "01.01.2024 Покупка в магазине 1000.00"
         # "2024-01-01 Покупка в магазине -1000.00"
+        # "01.01.2024 Покупка в магазине 1 000,00"
+        # "01.01.2024 Покупка в магазине 1 000,00 -"
         
         # Try to find date at the start
         date_match = re.match(r"^(\d{2}[.\-/]\d{2}[.\-/]\d{4}|\d{4}[.\-/]\d{2}[.\-/]\d{2})", line)
@@ -124,8 +126,9 @@ def _parse_text_block(text: str) -> list[dict[str, Any]]:
         if not parsed_date:
             continue
         
-        # Try to find amount at the end
-        amount_match = re.search(r"(-?\d[\d\s]*[.,]\d{2})\s*$", line)
+        # Try to find amount at the end — handle spaces as thousand separators
+        # and both comma and dot as decimal separators
+        amount_match = re.search(r"(-?\d[\d\s]*[.,]\d{2})\s*[-–—]?\s*$", line)
         if not amount_match:
             continue
         

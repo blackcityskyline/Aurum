@@ -51,4 +51,5 @@ pgdata/
 
 # Other
 UPDATES.md
-temp/
+temp/# graphify knowledge graph (local, rebuilt by git hooks)
+graphify-out/
