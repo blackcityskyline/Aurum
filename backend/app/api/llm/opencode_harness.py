@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 # Model/health calls are cheap reads; chat keeps its own long timeout.
 _TIMEOUT = httpx.Timeout(15.0, connect=5.0)
+# Chat waits longer (a real reply can take a while) but not forever: when the
+# harness hangs on a broken model we want a clear error, not a 2-minute stall.
+_CHAT_TIMEOUT = httpx.Timeout(90.0, connect=5.0)
 
 
 def _split_model(model: str | None) -> tuple[str, str] | None:
@@ -118,7 +121,7 @@ class OpenCodeHarnessProvider(HarnessProvider):
         # down or unhappy — LLMProviderError carries a readable detail so
         # the chat route doesn't turn it into an unhandled 500.
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
                 session_resp = await client.post(
                     f"{self.base_url}/session",
                     json={},
@@ -134,6 +137,18 @@ class OpenCodeHarnessProvider(HarnessProvider):
                 msg_resp.raise_for_status()
                 data = msg_resp.json()
 
+                # opencode reports a failed model call as HTTP 200 with an
+                # `error` object and empty `parts` (rate limit, no funds,
+                # region block, ...). Surface it instead of silently returning
+                # an empty reply the UI can only show as "no answer".
+                if isinstance(data, dict) and data.get("error"):
+                    err = data["error"]
+                    if isinstance(err, dict):
+                        detail = err.get("message") or err.get("name") or str(err)
+                    else:
+                        detail = str(err)
+                    raise LLMProviderError(f"opencode harness: {detail}")
+
                 # 3. Extract text (and reasoning, when present) from the parts
                 parts = data.get("parts", [])
                 text_parts = [p["text"] for p in parts if p.get("type") == "text"]
@@ -141,6 +156,14 @@ class OpenCodeHarnessProvider(HarnessProvider):
                     p["text"] for p in parts
                     if p.get("type") in ("reasoning", "thinking") and p.get("text")
                 ]
+
+                if not text_parts:
+                    # No error object but also no text: the model returned
+                    # nothing usable. Don't pretend it was an empty answer.
+                    raise LLMProviderError(
+                        "opencode harness returned no text "
+                        "(model produced an empty reply)"
+                    )
 
                 # 4. Clean up session (optional, keeps opencode tidy)
                 try:
@@ -155,6 +178,12 @@ class OpenCodeHarnessProvider(HarnessProvider):
         except httpx.HTTPStatusError as e:
             raise LLMProviderError(
                 describe_upstream_error(e.response, self.base_url)
+            ) from e
+        except httpx.TimeoutException as e:
+            raise LLMProviderError(
+                f"opencode harness at {self.base_url} timed out — the model "
+                "likely hung on a failed call. Check the model/provider is "
+                "reachable and has quota."
             ) from e
         except httpx.HTTPError as e:
             raise LLMProviderError(describe_transport_error(e, self.base_url)) from e

@@ -40,7 +40,12 @@ class ChatAttachment(Base):
     __tablename__ = "chat_attachments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    message_id: Mapped[int] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"))
+    # NULL until the message it belongs to exists: an attachment is uploaded
+    # *before* the chat message that references it is sent, so the row starts
+    # orphaned and chat_service links it (sets message_id) on send.
+    message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=True
+    )
     filename: Mapped[str] = mapped_column(String(255))
     content_type: Mapped[str] = mapped_column(String(100))
     size: Mapped[int] = mapped_column(Integer)

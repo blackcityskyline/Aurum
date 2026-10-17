@@ -95,9 +95,9 @@ async def upload_attachment(
     content = await file.read()
     file_path.write_bytes(content)
     
-    # Create attachment record
+    # Create attachment record (message_id NULL — linked when the message is sent)
     attachment = ChatAttachment(
-        message_id=0,  # Will be linked when message is sent
+        message_id=None,  # Will be linked when message is sent
         filename=file.filename,
         content_type=file.content_type or "application/octet-stream",
         size=len(content),
@@ -262,7 +262,7 @@ async def upload_attachment(
     
     # Create DB row (message_id is null — will be linked when message is sent)
     attachment = ChatAttachment(
-        message_id=0,  # Will be updated when message is sent
+        message_id=None,  # Will be updated when message is sent
         filename=file.filename,
         content_type=file.content_type or "application/octet-stream",
         size=len(content),
