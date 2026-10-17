@@ -50,6 +50,8 @@ services:
       # opencode harness (provider=opencode): address of opencode serve
       # (via socat on Docker gateway, see socat-opencode.service)
       AURUM_OPENCODE_URL: ${AURUM_OPENCODE_URL:-http://host.docker.internal:4096}
+      # opencode 2.x serve Basic-auth password (user "opencode"); empty = no auth
+      AURUM_OPENCODE_SERVER_PASSWORD: ${AURUM_OPENCODE_SERVER_PASSWORD:-}
       # openai_compatible (provider=openai_compatible): any OpenAI-compatible API
       # e.g. OpenRouter: AURUM_LLM_BASE_URL=https://openrouter.ai/api/v1
       AURUM_LLM_BASE_URL: ${AURUM_LLM_BASE_URL:-}
