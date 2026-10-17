@@ -228,14 +228,41 @@ class OpenCodeHarnessProvider(HarnessProvider):
             await asyncio.sleep(_POLL_INTERVAL_S)
 
     async def list_models(self) -> list[HarnessModel]:
-        """opencode 2.x no longer exposes a model catalogue over HTTP —
-        providers are packages that resolve models upstream. The model is set
-        on the opencode side (or pinned manually); there's nothing to list."""
-        raise ValueError(
-            "opencode 2.x doesn't expose a model list over its API — leave the "
-            "model blank to use opencode's default, or set it manually on the "
-            "opencode side"
-        )
+        """GET /api/model → the opencode 2.x model catalogue, flattened into
+        generic HarnessModel rows. Each row carries modelID/providerID/name,
+        a `limit.context` window and `capabilities.tools`."""
+        async with self._client(_TIMEOUT) as client:
+            resp = await client.get("/api/model")
+            resp.raise_for_status()
+            data = resp.json()
+        rows = data.get("data", data) if isinstance(data, dict) else data
+
+        models: list[HarnessModel] = []
+        for m in rows if isinstance(rows, list) else []:
+            if not isinstance(m, dict):
+                continue
+            model_id = m.get("modelID")
+            provider_id = m.get("providerID")
+            if not model_id or not provider_id:
+                continue
+            caps = m.get("capabilities") or {}
+            limit = m.get("limit") or {}
+            models.append(
+                HarnessModel(
+                    id=f"{provider_id}/{model_id}",
+                    label=m.get("name") or model_id,
+                    provider=provider_id,
+                    context=limit.get("context"),
+                    tool_calling=bool(caps.get("tools")),
+                )
+            )
+        models.sort(key=lambda x: (x.provider.lower(), x.label.lower()))
+        if not models:
+            raise ValueError(
+                "opencode reports no models — check the serve instance is "
+                "reachable and logged in"
+            )
+        return models
 
     async def health(self) -> str:
         """Create+delete an opencode session — same cheap probe as before."""
